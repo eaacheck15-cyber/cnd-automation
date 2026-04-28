@@ -1,0 +1,32 @@
+import { config } from "dotenv";
+import path from "path";
+
+config();
+
+function required(name: string): string {
+  const value = process.env[name];
+  if (!value) throw new Error(`Missing required env var: ${name}`);
+  return value;
+}
+
+function optional(name: string, fallback: string): string {
+  return process.env[name] ?? fallback;
+}
+
+export const GIT_WORKING_DIR = required("GIT_WORKING_DIR");
+export const GIT_REPO_URL = optional("GIT_REPO_URL", "");
+export const GIT_BRANCH = optional("GIT_BRANCH", "develop");
+export const GIT_USER_NAME = optional("GIT_USER_NAME", "mcp-cnd-pipeline");
+export const GIT_USER_EMAIL = optional("GIT_USER_EMAIL", "mcp@questores.com.br");
+export const WORK_DIR = required("WORK_DIR");
+export const PHP_BINARY = optional("PHP_BINARY", "php");
+
+export const BLOCKS_MEMORY_PATH = path.join(
+  GIT_WORKING_DIR,
+  ".claude",
+  "blocks",
+  "CND_BLOCKS_MEMORY.json"
+);
+
+export const STATE_DIR = path.join(WORK_DIR, "state");
+export const HAR_DIR = path.join(WORK_DIR, "har");
