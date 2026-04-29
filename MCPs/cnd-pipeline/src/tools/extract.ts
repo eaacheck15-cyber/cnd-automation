@@ -56,7 +56,7 @@ function processEntries(entries: any[]): FlowStep[] {
       headers:  cleanHeaders(request.headers ?? []),
       cookies:  extractCookies(request.cookies ?? []),
       payload:  extractPayload(request.postData ?? null) || null,
-      statusCode: response.status ?? null,
+      status: response.status ?? null,
     });
   }
 

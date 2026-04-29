@@ -11,7 +11,6 @@ import { interpretFlow } from "./tools/interpret.js";
 import { generateCode } from "./tools/generate.js";
 import { testCertificate } from "./tools/test.js";
 import { commitResult } from "./tools/commit.js";
-import { buildResult } from "./tools/decision.js";
 
 const stateManager = new StateManager();
 
@@ -30,7 +29,7 @@ const FlowStepSchema = z.object({
   headers:    z.record(z.string()),
   cookies:    z.record(z.string()),
   payload:    z.string().nullable(),
-  statusCode: z.number().nullable(),
+  status:     z.number().nullable(),
 });
 
 // ─── Tool 1: pipeline_run ────────────────────────────────────────────────────
@@ -117,9 +116,10 @@ server.tool(
 
 server.tool(
   "pipeline_interpret_flow",
-  "Classify each HTTP step in the flow as INIT, AUTH, CONSULTA, EMISSAO, POLLING, or DOWNLOAD based on URL, method, payload and response patterns.",
+  "Classify each HTTP step as INIT/AUTH/CONSULTA/EMISSAO/POLLING/DOWNLOAD/VALIDACAO and detect the global flow type (DIRETO/LOGIN_FORM/LOGIN_CERT/PROTOCOLO/CAPTCHA/HIBRIDO). On retry, pass artisan_feedback to adjust classification.",
   {
-    flow: z.array(FlowStepSchema).describe("Clean flow from pipeline_extract_har"),
+    flow:             z.array(FlowStepSchema).describe("Clean flow from pipeline_extract_har"),
+    artisan_feedback: z.string().optional().describe("Artisan output from previous failed test — used to refine classification on retry"),
   },
   async (input) => {
     try {

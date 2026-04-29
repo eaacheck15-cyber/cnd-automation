@@ -37,12 +37,17 @@ export interface FlowStep {
   headers: Record<string, string>;
   cookies: Record<string, string>;
   payload: string | null;
-  statusCode: number | null;
+  status: number | null;
 }
 
 export interface InterpretedStep {
   type: BlockType;
   step: FlowStep;
+}
+
+export interface InterpretFlowOutput {
+  flow_type: FlowType;
+  steps: InterpretedStep[];
 }
 
 export interface TaskPlan {
