@@ -33,10 +33,11 @@ export interface FlowStep {
   step: number;
   method: string;
   url: string;
+  query: string | null;
   headers: Record<string, string>;
-  payload: string;
-  responseType?: string;
-  statusCode?: number;
+  cookies: Record<string, string>;
+  payload: string | null;
+  statusCode: number | null;
 }
 
 export interface InterpretedStep {

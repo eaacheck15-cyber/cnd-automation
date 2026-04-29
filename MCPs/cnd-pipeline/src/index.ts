@@ -22,6 +22,17 @@ const server = new McpServer({
 
 const CertificateTypeSchema = z.enum(["Federal", "State", "Municipal"]);
 
+const FlowStepSchema = z.object({
+  step:       z.number(),
+  method:     z.string(),
+  url:        z.string(),
+  query:      z.string().nullable(),
+  headers:    z.record(z.string()),
+  cookies:    z.record(z.string()),
+  payload:    z.string().nullable(),
+  statusCode: z.number().nullable(),
+});
+
 // ─── Tool 1: pipeline_run ────────────────────────────────────────────────────
 
 server.tool(
@@ -108,15 +119,7 @@ server.tool(
   "pipeline_interpret_flow",
   "Classify each HTTP step in the flow as INIT, AUTH, CONSULTA, EMISSAO, POLLING, or DOWNLOAD based on URL, method, payload and response patterns.",
   {
-    flow: z.array(z.object({
-      step: z.number(),
-      method: z.string(),
-      url: z.string(),
-      headers: z.record(z.string()),
-      payload: z.string(),
-      responseType: z.string().optional(),
-      statusCode: z.number().optional(),
-    })).describe("Clean flow from pipeline_extract_har"),
+    flow: z.array(FlowStepSchema).describe("Clean flow from pipeline_extract_har"),
   },
   async (input) => {
     try {
@@ -136,13 +139,7 @@ server.tool(
   {
     interpretation: z.array(z.object({
       type: z.enum(["INIT", "AUTH", "CONSULTA", "EMISSAO", "POLLING", "DOWNLOAD", "VALIDACAO"]),
-      step: z.object({
-        step: z.number(),
-        method: z.string(),
-        url: z.string(),
-        headers: z.record(z.string()),
-        payload: z.string(),
-      }),
+      step: FlowStepSchema,
     })),
     task_description: z.string(),
     class_name: z.string(),
