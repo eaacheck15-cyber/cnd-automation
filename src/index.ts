@@ -11,6 +11,7 @@ import { interpretFlow } from "./tools/interpret.js";
 import { generateCode } from "./tools/generate.js";
 import { testCertificate } from "./tools/test.js";
 import { commitResult } from "./tools/commit.js";
+import { getRedmineTasks } from "./tools/redmine.js";
 
 const stateManager = new StateManager();
 
@@ -214,6 +215,28 @@ server.tool(
       return { content: [{ type: "text", text: "No state found." }] };
     }
     return { content: [{ type: "text", text: JSON.stringify(state, null, 2) }] };
+  }
+);
+
+// ─── Tool 10: redmine_get_tasks ───────────────────────────────────────────────
+
+server.tool(
+  "redmine_get_tasks",
+  "Fetch issues from Redmine API. Filters by project, status and assignee. Returns id, subject, description, status and priority.",
+  {
+    project_id:     z.string().optional().describe("Project ID (default: env REDMINE_PROJECT_ID)"),
+    status_id:      z.string().optional().describe("Status filter: 'open', 'closed', '*' or a numeric ID"),
+    assigned_to_id: z.string().optional().describe("Filter by assignee ID. Use 'me' for the current user."),
+    offset:         z.number().optional().describe("Pagination offset (default: 0)"),
+    limit:          z.number().optional().describe("Max results (default: 100)"),
+  },
+  async (input) => {
+    try {
+      const result = await getRedmineTasks(input);
+      return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+    } catch (err) {
+      return { content: [{ type: "text", text: `Error: ${(err as Error).message}` }], isError: true };
+    }
   }
 );
 

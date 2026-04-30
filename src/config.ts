@@ -21,6 +21,10 @@ export const GIT_USER_EMAIL = optional("GIT_USER_EMAIL", "mcp@questores.com.br")
 export const WORK_DIR = required("WORK_DIR");
 export const PHP_BINARY = optional("PHP_BINARY", "php");
 
+export const REDMINE_URL = optional("REDMINE_URL", "https://redmine.questor.com.br");
+export const REDMINE_API_KEY = required("REDMINE_API_KEY");
+export const REDMINE_PROJECT_ID = optional("REDMINE_PROJECT_ID", "1106");
+
 export const BLOCKS_MEMORY_PATH = path.join(
   GIT_WORKING_DIR,
   ".claude",
