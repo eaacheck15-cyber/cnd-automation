@@ -4,3 +4,5 @@ dist/
 work/
 *.har
 *.log
+.claude/settings.json
+.claude/settings.local.json
