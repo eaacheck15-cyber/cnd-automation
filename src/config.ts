@@ -21,6 +21,10 @@ export const GIT_USER_EMAIL = optional("GIT_USER_EMAIL", "mcp@questores.com.br")
 export const WORK_DIR = required("WORK_DIR");
 export const PHP_BINARY = optional("PHP_BINARY", "php");
 
+// Docker: when set, artisan commands run inside the container instead of host PHP
+export const DOCKER_CONTAINER = optional("DOCKER_CONTAINER", "");
+export const DOCKER_WORKING_DIR = optional("DOCKER_WORKING_DIR", "/var/www/html");
+
 export const REDMINE_URL = optional("REDMINE_URL", "https://redmine.questor.com.br");
 export const REDMINE_API_KEY = required("REDMINE_API_KEY");
 export const REDMINE_PROJECT_ID = optional("REDMINE_PROJECT_ID", "1106");
@@ -34,3 +38,4 @@ export const BLOCKS_MEMORY_PATH = path.join(
 
 export const STATE_DIR = path.join(WORK_DIR, "state");
 export const HAR_DIR = path.join(WORK_DIR, "har");
+export const TASK_QUEUE_PATH = path.join(WORK_DIR, "state", "task_queue.json");

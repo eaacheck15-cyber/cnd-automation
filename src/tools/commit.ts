@@ -1,7 +1,7 @@
 import { execSync } from "child_process";
 import path from "path";
 import type { CommitResult, CertificateType } from "../types.js";
-import { GIT_WORKING_DIR, PHP_BINARY } from "../config.js";
+import { GIT_WORKING_DIR, PHP_BINARY, DOCKER_CONTAINER } from "../config.js";
 
 export interface CommitInput {
   task_id: string;
@@ -27,7 +27,10 @@ export async function commitResult(input: CommitInput): Promise<CommitResult> {
   const hash = exec("git rev-parse --short HEAD").trim();
 
   // FASE 8 do cnd-engine: atualizar lista de classes após commit
-  exec(`${PHP_BINARY} artisan update-class-list`);
+  const updateCmd = DOCKER_CONTAINER
+    ? `docker exec ${DOCKER_CONTAINER} php -d memory_limit=512M artisan update-class-list`
+    : `${PHP_BINARY} artisan update-class-list`;
+  exec(updateCmd);
 
   return { committed: true, commit_hash: hash, message };
 }

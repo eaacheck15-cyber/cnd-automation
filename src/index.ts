@@ -11,7 +11,7 @@ import { interpretFlow } from "./tools/interpret.js";
 import { generateCode } from "./tools/generate.js";
 import { testCertificate } from "./tools/test.js";
 import { commitResult } from "./tools/commit.js";
-import { getRedmineTasks } from "./tools/redmine.js";
+import { getRedmineTasks, getNextTask } from "./tools/redmine.js";
 
 const stateManager = new StateManager();
 
@@ -76,14 +76,23 @@ server.tool(
 
 // ─── Tool 3: pipeline_browser_capture ────────────────────────────────────────
 
+const NavStepSchema = z.object({
+  action:   z.enum(["goto", "fill", "click", "wait", "select"]),
+  url:      z.string().optional().describe("URL to navigate to (goto)"),
+  selector: z.string().optional().describe("CSS/Playwright selector (fill, click, select)"),
+  value:    z.string().optional().describe("Value to fill or select option (fill, select)"),
+  ms:       z.number().optional().describe("Milliseconds to wait (wait)"),
+});
+
 server.tool(
   "pipeline_browser_capture",
-  "Open Playwright headless browser, execute the certificate issuance flow, and capture a full HAR file to WORK_DIR/har/{task_id}.har.",
+  "Open Playwright browser, execute the certificate issuance flow, and capture a full HAR file to WORK_DIR/har/{task_id}.har. IMPORTANT: before calling this tool, use WebFetch to load the portal URL and analyze the HTML — identify the exact selectors for input fields (CNPJ, carnê, inscrição, etc.) and submit buttons. Then build nav_steps with precise actions (goto, fill, click) based on that analysis. If nav_steps is provided, the browser executes them exactly; otherwise falls back to generic CNPJ/submit selector heuristics (unreliable).",
   {
-    task_id: z.string(),
-    url: z.string().describe("Main URL to navigate to"),
-    inputs: z.array(z.string()).describe("Input values to fill during navigation"),
-    expected_flow: z.array(z.string()).describe("Sequence of steps to perform"),
+    task_id:       z.string(),
+    url:           z.string().describe("Main URL (used only when nav_steps is empty as fallback entry point)"),
+    inputs:        z.array(z.string()).describe("Input values (CNPJ, carnê, etc.) — used in fallback mode"),
+    expected_flow: z.array(z.string()).describe("Human-readable step descriptions for context"),
+    nav_steps:     z.array(NavStepSchema).optional().describe("Precise navigation steps computed by Claude after HTML analysis. Provide this to drive the browser exactly as the portal requires."),
   },
   async (input) => {
     try {
@@ -136,7 +145,7 @@ server.tool(
 
 server.tool(
   "pipeline_generate_code",
-  "Generate a PHP certificate class following CND architecture. Reads CND_BLOCKS_MEMORY.json for pattern reuse. Identifies base class by domain and applies all rules from cnd-engine.md.",
+  "Collects context for PHP class generation: reads similar certificate examples from the CND project, detects the recommended base class from the HTTP flow, and loads CND_BLOCKS_MEMORY patterns. After receiving the result YOU (Claude) must write the PHP class following the instructions field, then call pipeline_test with the generated php_code.",
   {
     interpretation: z.array(z.object({
       type: z.enum(["INIT", "AUTH", "CONSULTA", "EMISSAO", "POLLING", "DOWNLOAD", "VALIDACAO"]),
@@ -233,6 +242,22 @@ server.tool(
   async (input) => {
     try {
       const result = await getRedmineTasks(input);
+      return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+    } catch (err) {
+      return { content: [{ type: "text", text: `Error: ${(err as Error).message}` }], isError: true };
+    }
+  }
+);
+
+// ─── Tool 11: redmine_next_task ───────────────────────────────────────────────
+
+server.tool(
+  "redmine_next_task",
+  "Return the next pending task from the local queue. If the queue is missing, exhausted, or older than 24h, automatically refreshes from the Redmine API before returning. Field auto_refreshed=true indicates a refresh happened.",
+  {},
+  async () => {
+    try {
+      const result = await getNextTask();
       return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
     } catch (err) {
       return { content: [{ type: "text", text: `Error: ${(err as Error).message}` }], isError: true };

@@ -15,7 +15,9 @@
         "PHP_BINARY": "php",
         "REDMINE_URL": "https://redmine.questor.com.br",
         "REDMINE_API_KEY": "7993f5438220341cda520faf3ff746f49c1c8e50",
-        "REDMINE_PROJECT_ID": "1106"
+        "REDMINE_PROJECT_ID": "1106",
+        "DOCKER_CONTAINER": "configs-development-app-1",
+        "DOCKER_WORKING_DIR": "/var/www/html"
       }
     }
   }

@@ -50,6 +50,14 @@ export interface InterpretFlowOutput {
   steps: InterpretedStep[];
 }
 
+export interface NavStep {
+  action: "goto" | "fill" | "click" | "wait" | "select";
+  url?: string;       // goto
+  selector?: string;  // fill, click, select
+  value?: string;     // fill, select
+  ms?: number;        // wait
+}
+
 export interface TaskPlan {
   url: string;
   inputs: string[];
@@ -70,9 +78,11 @@ export interface CommitResult {
 }
 
 export interface GenerationResult {
-  php_code: string;
   base_class: string;
-  blocks_used: string[];
+  namespace: string;
+  examples: string[];
+  blocks_memory: string;
+  instructions: string;
 }
 
 export interface PipelineData {
