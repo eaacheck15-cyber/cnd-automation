@@ -11,7 +11,8 @@ import { interpretFlow } from "./tools/interpret.js";
 import { generateCode } from "./tools/generate.js";
 import { testCertificate } from "./tools/test.js";
 import { commitResult } from "./tools/commit.js";
-import { getRedmineTasks, getNextTask } from "./tools/redmine.js";
+import { getRedmineTasks, getNextTask, updateRedmineIssue } from "./tools/redmine.js";
+import { REDMINE_STATUS_EM_DESENV, REDMINE_STATUS_AG_REVIEW, REDMINE_STATUS_AG_DESENV } from "./config.js";
 
 const stateManager = new StateManager();
 
@@ -259,6 +260,29 @@ server.tool(
     try {
       const result = await getNextTask();
       return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+    } catch (err) {
+      return { content: [{ type: "text", text: `Error: ${(err as Error).message}` }], isError: true };
+    }
+  }
+);
+
+// ─── Tool 12: redmine_update_task ────────────────────────────────────────────
+
+server.tool(
+  "redmine_update_task",
+  `Update a Redmine issue status and/or add a journal note. Use the predefined status constants:
+- Em Desenvolvimento (${REDMINE_STATUS_EM_DESENV}): when starting work on a task
+- Ag. Review (${REDMINE_STATUS_AG_REVIEW}): when pipeline succeeds
+- Ag. Desenv. (${REDMINE_STATUS_AG_DESENV}): when pipeline fails`,
+  {
+    issue_id: z.number().describe("Redmine issue ID"),
+    status_id: z.string().optional().describe(`Status ID to set. Use: ${REDMINE_STATUS_EM_DESENV} (Em Desenv.), ${REDMINE_STATUS_AG_REVIEW} (Ag. Review), ${REDMINE_STATUS_AG_DESENV} (Ag. Desenv.)`),
+    notes: z.string().optional().describe("Journal note to add to the issue history"),
+  },
+  async (input) => {
+    try {
+      await updateRedmineIssue(input);
+      return { content: [{ type: "text", text: "Issue updated successfully." }] };
     } catch (err) {
       return { content: [{ type: "text", text: `Error: ${(err as Error).message}` }], isError: true };
     }

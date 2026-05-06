@@ -1,6 +1,29 @@
 import fs from "fs";
 import path from "path";
-import { REDMINE_URL, REDMINE_API_KEY, REDMINE_PROJECT_ID, TASK_QUEUE_PATH } from "../config.js";
+import { REDMINE_URL, REDMINE_API_KEY, REDMINE_PROJECT_ID, TASK_QUEUE_PATH, STATE_DIR } from "../config.js";
+
+export async function updateRedmineIssue(input: {
+  issue_id: number;
+  status_id?: string;
+  notes?: string;
+}): Promise<void> {
+  const body: Record<string, unknown> = {};
+  if (input.status_id) body.status_id = Number(input.status_id);
+  if (input.notes) body.notes = input.notes;
+
+  const response = await fetch(`${REDMINE_URL}/issues/${input.issue_id}.json`, {
+    method: "PUT",
+    headers: {
+      "X-Redmine-API-Key": REDMINE_API_KEY,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ issue: body }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Redmine update error: ${response.status} ${response.statusText}`);
+  }
+}
 
 export interface RedmineIssue {
   id: number;
@@ -128,10 +151,19 @@ export async function getNextTask(): Promise<{
     return { task: null, remaining: 0, cursor: 0, fetched_at: queue.fetched_at, auto_refreshed };
   }
 
-  const task = queue.tasks[queue.cursor];
-  queue.cursor += 1;
-  saveQueue(queue);
+  // Skip tasks that were already attempted (state file exists)
+  while (queue.cursor < queue.tasks.length) {
+    const candidate = queue.tasks[queue.cursor];
+    queue.cursor += 1;
 
-  const remaining = queue.tasks.length - queue.cursor;
-  return { task, remaining, cursor: queue.cursor, fetched_at: queue.fetched_at, auto_refreshed };
+    const stateFile = path.join(STATE_DIR, `${candidate.id}.json`);
+    if (fs.existsSync(stateFile)) continue;
+
+    saveQueue(queue);
+    const remaining = queue.tasks.length - queue.cursor;
+    return { task: candidate, remaining, cursor: queue.cursor, fetched_at: queue.fetched_at, auto_refreshed };
+  }
+
+  saveQueue(queue);
+  return { task: null, remaining: 0, cursor: queue.cursor, fetched_at: queue.fetched_at, auto_refreshed };
 }

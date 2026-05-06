@@ -11,13 +11,12 @@ Você está operando em modo autônomo. Execute cada passo na ordem abaixo, sem 
 
 ### PASSO 1 — Verificar pausa
 
-Verifique se o arquivo `c:\Workspace\cnd-automation\STOP` existe usando Bash:
-```
+Verifique se o arquivo `c:\Workspace\cnd-automation\STOP` existe:
+```powershell
 Test-Path c:\Workspace\cnd-automation\STOP
 ```
-
-- Se **True** → exiba "⏸ Pipeline pausado. Delete o arquivo STOP para retomar." e **encerre o ciclo**.
-- Se **False** → continue.
+- **True** → exiba "⏸ Pipeline pausado. Delete o arquivo STOP para retomar." e **encerre o ciclo**.
+- **False** → continue.
 
 ---
 
@@ -25,94 +24,179 @@ Test-Path c:\Workspace\cnd-automation\STOP
 
 Chame `redmine_next_task`.
 
-- Se `task: null` → exiba "📭 Fila de tarefas vazia." e **encerre o ciclo**.
-- Se `auto_refreshed: true` → informe quantas tarefas foram carregadas do Redmine.
-- Se retornou uma tarefa → anote `id`, `subject` e `description` e continue.
+- `task: null` → "📭 Fila vazia." e **encerre o ciclo**.
+- `auto_refreshed: true` → informe quantas tarefas foram carregadas.
+- Tarefa retornada → anote `id`, `subject` e `description` e continue.
 
 ---
 
-### PASSO 3 — Extrair dados da tarefa
+### PASSO 3 — Detectar tipo de operação
 
-A partir de `subject` e `description`, extraia:
+Leia o início do `subject`:
 
-| Campo | Como extrair |
-|-------|-------------|
-| `task_id` | Campo `id` do Redmine (número) |
-| `type` | "Federal", "State" ou "Municipal" — leia do subject/description |
-| `state` | Sigla UF (ex: "SP", "MG") — obrigatório se type for State ou Municipal |
-| `class_name` | PascalCase sem espaços. Ex: "CND Municipal São Paulo SP" → "CertificateSaoPauloSP" |
-| `task_description` | Use o campo `description` completo da tarefa |
+| Subject começa com | Operação |
+|--------------------|----------|
+| `Implementar`      | **NOVA IMPLEMENTAÇÃO** — classe inexistente, criar do zero |
+| `Revisar`          | **MANUTENÇÃO** — classe existente, corrigir problema |
 
-Se não conseguir determinar `type` ou `class_name`, marque como falha e vá para o PASSO 9.
-
----
-
-### PASSO 4 — Discovery
-
-Chame `pipeline_discover` com `task_id` e `task_description`.
-
-Salve o resultado: `url`, `inputs`, `expected_flow`, `complexity`.
+Extraia também:
+- **`type`**: subject contém "Federal" → `Federal`; "Estadual" → `State`; "Municipal" → `Municipal`
+- **`state`**: sigla UF no subject (ex: "de Cajati - SP" → `SP`). Obrigatório para State e Municipal.
+- **`url`**: campo `URL:` ou `URL Site:` na description
+- **`cnpj`**: campo `CNPJ:` na description
+- **`inputs_adicionais`**: seção `Campos Adicionais Para a Certidão` ou `Dados para Emissão`
+- **`instrucoes`**: seção `Instrução Emissão No site`
+- **`expectativas`**: seção `Expectativas`
 
 ---
 
-### PASSO 5 — Captura do browser
+### PASSO 3A — NOVA IMPLEMENTAÇÃO: definir class_name
 
-Antes de chamar `pipeline_browser_capture`:
-1. Use `WebFetch` para carregar a URL do portal.
-2. Analise o HTML — identifique seletores exatos dos campos (CNPJ, inscrição, carnê, etc.) e do botão de submit.
-3. Monte o array `nav_steps` com ações precisas (goto, fill, click).
+Gere o `class_name` em PascalCase a partir da cidade/órgão no subject:
+- "Implementar Captura Certidão Municipal de Cajati - SP" → `CertificateCajati`
+- "Implementar Captura Certidão Federal - Receita Federal" → `CertificateReceitaFederal`
+- "Implementar Captura Certidão Estadual de Minas Gerais - SEFAZ" → `CertificateSefazMG`
 
-Então chame `pipeline_browser_capture` com `nav_steps` preenchido.
-
-Se falhar, tente novamente com `nav_steps` ajustado (até 2 tentativas).
+Remova acentos, espaços e caracteres especiais. Prefixo sempre `Certificate`.
 
 ---
 
-### PASSO 6 — Extração do HAR
+### PASSO 3B — MANUTENÇÃO: extrair class_name e ler código existente
+
+Extraia o `class_name` do campo `Certidão:` na description:
+- `Certidão: CertificateIguaracu` → `class_name = "CertificateIguaracu"`
+
+Localize e leia o arquivo PHP existente no projeto CND:
+```powershell
+Get-ChildItem -Path C:\Workspace\cnd -Recurse -Filter "{class_name}.php" | Select-Object -ExpandProperty FullName
+```
+
+Leia o arquivo com a ferramenta Read. Esse código será a base para as correções.
+
+---
+
+### PASSO 4 — Marcar tarefa como Em Desenvolvimento
+
+Chame `redmine_update_task`:
+- `issue_id`: id da tarefa
+- `status_id`: `"57"` (Em Desenv.)
+- `notes`: `"Tarefa iniciada pelo pipeline automático."`
+
+---
+
+### PASSO 5 — Discovery
+
+Chame `pipeline_discover` com `task_id` e `task_description` (description completa da tarefa).
+
+Salve: `url`, `inputs`, `expected_flow`, `complexity`.
+
+---
+
+### PASSO 6 — Captura do browser
+
+O objetivo é capturar o tráfego HTTP do portal para que o código PHP possa replicar as requisições. O browser é apenas o meio para navegar e disparar esse tráfego.
+
+Monte `nav_steps` seguindo as `instrucoes` da tarefa: navegue pelo fluxo de emissão usando o CNPJ e inputs adicionais fornecidos, até obter a certidão. Não se preocupe com seletores específicos — o objetivo é concluir o fluxo para gerar o HAR.
+
+Chame `pipeline_browser_capture` com `nav_steps` preenchido.
+
+Se falhar, ajuste a navegação e tente novamente (até 2 tentativas).
+
+---
+
+### PASSO 7 — Extração do HAR
 
 Chame `pipeline_extract_har` com o `har_path` retornado no passo anterior.
 
-Salve o array de `flow`.
+Salve o array `flow`.
 
 ---
 
-### PASSO 7 — Interpretação do fluxo
+### PASSO 8 — Interpretação do fluxo
 
-Chame `pipeline_interpret_flow` com o `flow` do passo anterior.
+Chame `pipeline_interpret_flow` com o `flow` extraído.
 
 Salve `flow_type` e `steps`.
 
 ---
 
-### PASSO 8 — Geração de código
+### PASSO 9A — NOVA IMPLEMENTAÇÃO: gerar classe PHP
 
 Chame `pipeline_generate_code` com `interpretation`, `task_description`, `class_name`, `type` e `state`.
 
-Com base no resultado (exemplos, base_class, blocks_memory, instructions):
-- **Escreva a classe PHP completa** seguindo as instruções retornadas.
-- Chame `pipeline_test` com `class_name`, `type`, `state` e o `php_code` gerado.
+Com base no resultado (exemplos, base_class, blocks_memory, instructions), **escreva a classe PHP completa** seguindo as instruções retornadas.
+
+Chame `pipeline_test` com `class_name`, `type`, `state` e o `php_code` gerado.
+
+---
+
+### PASSO 9B — MANUTENÇÃO: corrigir classe PHP existente
+
+Você já tem:
+- O código PHP atual (lido no PASSO 3B)
+- A interpretação do fluxo HTTP atual do site (PASSO 8)
+- O problema descrito na seção `expectativas`
+
+Compare o fluxo HTTP atual com o que o código PHP está replicando. Identifique o que diverge:
+- Endpoints diferentes ou renomeados?
+- Parâmetros novos, removidos ou com valores diferentes?
+- Headers ou cookies necessários que o código não está enviando?
+- Lógica de validação do resultado incorreta (ex: regex errada, campo de status mudou)?
+
+Aplique as correções mínimas necessárias no código existente.
+
+Chame `pipeline_test` com `class_name`, `type`, `state` e o `php_code` corrigido.
+
+---
+
+### PASSO 10 — Retry em caso de falha no teste
 
 Se o teste falhar:
-- Leia o `artisan_output` para entender o erro.
-- Corrija o código PHP e chame `pipeline_test` novamente.
-- Repita até 3 tentativas no total. Na terceira falha, vá para PASSO 9.
+- Analise o `artisan_output`, identifique a causa raiz e corrija o código.
+- Chame `pipeline_test` novamente.
+- Repita até **3 tentativas** no total.
+- Se todas falharem → vá para PASSO 11 (falha).
 
-Se o teste passar → continue para PASSO 9 (sucesso).
-
----
-
-### PASSO 9 — Commit ou registro de falha
-
-**Se sucesso:**
-- Chame `pipeline_commit` com `task_id`, `class_name`, `type` e `state`.
-- Exiba: "✅ #{task_id} — {class_name} implementado e commitado."
-
-**Se falha:**
-- Exiba: "❌ #{task_id} — {class_name} falhou após tentativas. Pulando para próxima tarefa."
-- Registre o erro mas **não interrompa o loop**.
+Se passar → vá para PASSO 12 (sucesso).
 
 ---
 
-### PASSO 10 — Próximo ciclo
+### PASSO 11 — Registrar falha no Redmine
 
-Exiba um resumo da tarefa concluída e aguarde o próximo ciclo do `/loop`.
+Traduza o erro para uma descrição objetiva e humana. Exemplos:
+- "Captcha detectado na página de emissão — não foi possível automatizar."
+- "Parâmetro `inscricaoMunicipal` não encontrado no retorno da API."
+- "Portal bloqueou a requisição via automação (possível detecção de bot)."
+- "Endpoint de emissão retornou estrutura de resposta diferente do esperado."
+- "Certidão retorna status de falha mesmo para empresa regular no site."
+
+Chame `redmine_update_task`:
+- `issue_id`: id da tarefa
+- `status_id`: `"56"` (Ag. Desenv.)
+- `notes`: descrição humana do erro
+
+Exiba: `❌ #{task_id} — {class_name} — {motivo}`
+
+**Encerre o ciclo.**
+
+---
+
+### PASSO 12 — Commit e encerramento com sucesso
+
+Chame `pipeline_commit` com `task_id`, `class_name`, `type` e `state`.
+
+Chame `redmine_update_task`:
+- `issue_id`: id da tarefa
+- `status_id`: `"84"` (Ag. Review)
+- `notes`:
+```
+Alterações realizadas:
+> {implementação: "Implementação da classe {ClassName} para emissão automática de certidão."
+   manutenção: "Correção da classe {ClassName} — {descrição curta do que foi corrigido}."}
+
+Projetos e Arquivos Modificados:
+> cnd — {caminho relativo do arquivo PHP}
+> cnd — config/certificates.php
+```
+
+Exiba: `✅ #{task_id} — {class_name} — commitado e atualizado no Redmine.`
