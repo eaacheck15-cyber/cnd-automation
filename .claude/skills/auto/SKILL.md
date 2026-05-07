@@ -126,7 +126,7 @@ Chame `pipeline_generate_code` com `interpretation`, `task_description`, `class_
 
 Com base no resultado (exemplos, base_class, blocks_memory, instructions), **escreva a classe PHP completa** seguindo as instruções retornadas.
 
-Chame `pipeline_test` com `class_name`, `type`, `state` e o `php_code` gerado.
+Chame `pipeline_test` com `class_name`, `type`, `state`, `php_code`, `cnpj` e `nome` (se disponível na tarefa).
 
 ---
 
@@ -145,7 +145,7 @@ Compare o fluxo HTTP atual com o que o código PHP está replicando. Identifique
 
 Aplique as correções mínimas necessárias no código existente.
 
-Chame `pipeline_test` com `class_name`, `type`, `state` e o `php_code` corrigido.
+Chame `pipeline_test` com `class_name`, `type`, `state`, `php_code`, `cnpj` e `nome` (se disponível na tarefa).
 
 ---
 
@@ -183,7 +183,7 @@ Exiba: `❌ #{task_id} — {class_name} — {motivo}`
 
 ### PASSO 12 — Commit e encerramento com sucesso
 
-Chame `pipeline_commit` com `task_id`, `class_name`, `type` e `state`.
+Chame `pipeline_commit` com `task_id`, `task_subject` (subject completo da tarefa), `class_name`, `type` e `state`.
 
 Chame `redmine_update_task`:
 - `issue_id`: id da tarefa

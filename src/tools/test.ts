@@ -1,14 +1,16 @@
-import { execSync } from "child_process";
+import { execSync, spawnSync } from "child_process";
 import { writeFile, readFile, mkdir } from "fs/promises";
 import path from "path";
 import type { TestResult, CertificateType } from "../types.js";
-import { GIT_WORKING_DIR, PHP_BINARY, DOCKER_CONTAINER, DOCKER_WORKING_DIR } from "../config.js";
+import { GIT_WORKING_DIR, PHP_BINARY, DOCKER_CONTAINER, DOCKER_WORKING_DIR, MONGO_CONTAINER, MONGO_DB } from "../config.js";
 
 export interface TestCertificateInput {
   class_name: string;
   type: CertificateType;
   state?: string;
   php_code: string;
+  cnpj: string;
+  nome?: string;
 }
 
 function artisanExec(artisanArgs: string): string {
@@ -20,7 +22,6 @@ function artisanExec(artisanArgs: string): string {
 
 function phpLintCmd(filePath: string): string {
   if (DOCKER_CONTAINER) {
-    // Map host path to container path
     const containerPath = filePath
       .replace(GIT_WORKING_DIR, DOCKER_WORKING_DIR)
       .replace(/\\/g, '/');
@@ -29,8 +30,54 @@ function phpLintCmd(filePath: string): string {
   return `"${PHP_BINARY}" -l "${filePath}"`;
 }
 
+function mongoExec(script: string): string {
+  const result = spawnSync(
+    "docker",
+    ["exec", "-i", MONGO_CONTAINER, "mongosh", MONGO_DB, "--quiet"],
+    { input: script, encoding: "utf-8", timeout: 15000 }
+  );
+  if (result.status !== 0) throw new Error(`mongosh error: ${result.stderr}`);
+  return result.stdout.trim();
+}
+
+function mongoInsertTestRecord(class_name: string, cnpj: string, nome: string): string {
+  const doc = {
+    cliente: cnpj,
+    classname: class_name,
+    category: null,
+    empresa: cnpj,
+    nome,
+    inscfederal: cnpj,
+    numtentativas: 0,
+    tentativalog: 0,
+    captchalog: 0,
+    msgErro: null,
+    msgSolicitacao: null,
+    status: "Aguardando",
+    tipocertidao: "0",
+    tiposolicitacao: "Manual",
+    adicionais: { configuration: [] },
+    external: true,
+  };
+  const script = `
+const doc = ${JSON.stringify(doc)};
+doc.datainicio = new Date();
+const r = db.listaespera.insertOne(doc);
+print(r.insertedId.toString());
+`;
+  return mongoExec(script);
+}
+
+function mongoCleanupTestRecord(insertedId: string): void {
+  try {
+    mongoExec(`db.listaespera.deleteOne({ _id: ObjectId('${insertedId}') });`);
+  } catch {
+    // best-effort cleanup
+  }
+}
+
 export async function testCertificate(input: TestCertificateInput): Promise<TestResult> {
-  const { class_name, type, state, php_code } = input;
+  const { class_name, type, state, php_code, cnpj, nome } = input;
 
   // 1. Write PHP file
   const rel = getCertPath(type, state, class_name);
@@ -61,7 +108,15 @@ export async function testCertificate(input: TestCertificateInput): Promise<Test
     configErrors.push(`config/certificates.php: ${(err as Error).message}`);
   }
 
-  // 4. Run artisan issue inside Docker (PHP 7.3) or host
+  // 4. Insert test record into MongoDB so artisan has something to process
+  let testRecordId: string | null = null;
+  try {
+    testRecordId = mongoInsertTestRecord(class_name, cnpj, nome ?? "EMPRESA TESTE");
+  } catch (err: any) {
+    configErrors.push(`MongoDB insert failed: ${(err as Error).message}`);
+  }
+
+  // 5. Run artisan issue inside Docker (PHP 7.3) or host
   let artisan_output = "";
   try {
     artisan_output = execSync(
@@ -71,6 +126,11 @@ export async function testCertificate(input: TestCertificateInput): Promise<Test
   } catch (err: any) {
     artisan_output = (err.stdout ?? "") + "\n" + (err.stderr ?? "");
     configErrors.push("artisan issue exited with error — see artisan_output");
+  }
+
+  // 6. Cleanup: if artisan didn't consume the record (failure), remove it
+  if (testRecordId) {
+    mongoCleanupTestRecord(testRecordId);
   }
 
   const lower = artisan_output.toLowerCase();

@@ -32,6 +32,9 @@ export const REDMINE_STATUS_EM_DESENV = optional("REDMINE_STATUS_EM_DESENV", "57
 export const REDMINE_STATUS_AG_REVIEW = optional("REDMINE_STATUS_AG_REVIEW", "84");
 export const REDMINE_STATUS_AG_DESENV = optional("REDMINE_STATUS_AG_DESENV", "56");
 
+export const MONGO_CONTAINER = optional("MONGO_CONTAINER", "configs-development-mongodb-1");
+export const MONGO_DB = optional("MONGO_DB", "questorservercnd");
+
 export const BLOCKS_MEMORY_PATH = path.join(
   GIT_WORKING_DIR,
   ".claude",

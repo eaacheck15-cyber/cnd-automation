@@ -5,18 +5,19 @@ import { GIT_WORKING_DIR, PHP_BINARY, DOCKER_CONTAINER } from "../config.js";
 
 export interface CommitInput {
   task_id: string;
+  task_subject: string;
   class_name: string;
   type: CertificateType;
   state?: string;
 }
 
 export async function commitResult(input: CommitInput): Promise<CommitResult> {
-  const { task_id, class_name, type, state } = input;
+  const { task_id, task_subject, class_name, type, state } = input;
 
   const certPath   = getCertPath(type, state, class_name);
   const configPath = "config/certificates.php";
   const memoryPath = path.join(".claude", "blocks", "CND_BLOCKS_MEMORY.json");
-  const message    = `#${task_id} - Implementa ${class_name}`;
+  const message    = `#${task_id} - ${task_subject}`;
 
   const exec = (cmd: string) =>
     execSync(cmd, { cwd: GIT_WORKING_DIR, stdio: "pipe", encoding: "utf-8" });

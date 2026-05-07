@@ -177,6 +177,8 @@ server.tool(
     type: CertificateTypeSchema,
     state: z.string().optional(),
     php_code: z.string().describe("Full PHP class source code"),
+    cnpj: z.string().describe("CNPJ to insert in MongoDB listaespera before running artisan"),
+    nome: z.string().optional().describe("Company name for the test record (default: EMPRESA TESTE)"),
   },
   async (input) => {
     try {
@@ -192,9 +194,10 @@ server.tool(
 
 server.tool(
   "pipeline_commit",
-  "After a successful test, git add + git commit the generated PHP file, updated config/certificates.php, and updated CND_BLOCKS_MEMORY.json. Commit message: '#{task_id} - Implementa {ClassName}'.",
+  "After a successful test, git add + git commit the generated PHP file, updated config/certificates.php, and updated CND_BLOCKS_MEMORY.json. Commit message: '#{task_id} - {task_subject}'.",
   {
     task_id: z.string(),
+    task_subject: z.string().describe("Full Redmine task subject — used as the commit message body after the task ID"),
     class_name: z.string(),
     type: CertificateTypeSchema,
     state: z.string().optional(),
