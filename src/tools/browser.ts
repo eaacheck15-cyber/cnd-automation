@@ -1,7 +1,7 @@
-import { chromium } from "playwright";
-import { mkdir } from "fs/promises";
+import { chromium, type Browser, type BrowserContext, type Frame, type Page } from "playwright";
+import { mkdir, writeFile, stat } from "fs/promises";
 import path from "path";
-import { HAR_DIR } from "../config.js";
+import { HAR_DIR, BROWSER_HEADLESS } from "../config.js";
 import type { NavStep } from "../types.js";
 
 export interface BrowserCaptureInput {
@@ -14,6 +14,10 @@ export interface BrowserCaptureInput {
 
 export interface BrowserCaptureOutput {
   har_path: string;
+  pdf_path?: string;
+  popup_pages?: number;
+  failed_step?: number;
+  failure_reason?: string;
 }
 
 const CNPJ_SELECTORS = [
@@ -46,11 +50,42 @@ const SUBMIT_SELECTORS = [
 
 const BLOCKED_RESOURCES = ['image', 'stylesheet', 'font', 'media'];
 
-async function fillWithDelay(page: any, selector: string, value: string, delay = 80) {
-  await page.focus(selector);
+type FillTarget = Page | Frame;
+
+async function fillWithDelay(target: FillTarget, selector: string, value: string, delay = 80) {
+  const loc = target.locator(selector).first();
+  await loc.click();
+  await loc.fill('');
+  // Frame doesn't expose keyboard directly — fall back to its owning page.
+  const keyboard = 'keyboard' in target ? target.keyboard : target.page().keyboard;
   for (const char of value) {
-    await page.keyboard.type(char, { delay });
+    await keyboard.type(char, { delay });
   }
+}
+
+// Pattern adapted from qscraping certificateICMSdeSP.js (lines 50-55):
+// poll page.frames() for up to 6s looking for a frame whose URL matches.
+async function findFrame(page: Page, frameUrl: string): Promise<Frame> {
+  for (let i = 0; i < 6; i++) {
+    const frame = page.frames().find(f => f.url().includes(frameUrl));
+    if (frame) return frame;
+    await page.waitForTimeout(1000);
+  }
+  const known = page.frames().map(f => f.url()).join(", ");
+  throw new Error(`Frame not found for url substring "${frameUrl}". Known frames: [${known}]`);
+}
+
+function pickPage(mainPage: Page, extraPages: Page[], pageIndex: number | undefined): Page {
+  if (!pageIndex) return mainPage;
+  const popup = extraPages[pageIndex - 1];
+  if (!popup) {
+    throw new Error(`page_index ${pageIndex} requested but only ${extraPages.length} popup(s) detected`);
+  }
+  return popup;
+}
+
+async function fileExists(p: string): Promise<boolean> {
+  try { await stat(p); return true; } catch { return false; }
 }
 
 export async function browserCapture(input: BrowserCaptureInput): Promise<BrowserCaptureOutput> {
@@ -58,9 +93,10 @@ export async function browserCapture(input: BrowserCaptureInput): Promise<Browse
 
   await mkdir(HAR_DIR, { recursive: true });
   const har_path = path.join(HAR_DIR, `${task_id}.har`);
+  const pdf_path = path.join(HAR_DIR, `${task_id}.pdf`);
 
-  const browser = await chromium.launch({
-    headless: false,
+  const browser: Browser = await chromium.launch({
+    headless: BROWSER_HEADLESS,
     slowMo: 300,
     timeout: 80000,
     args: [
@@ -106,8 +142,12 @@ export async function browserCapture(input: BrowserCaptureInput): Promise<Browse
     ],
   });
 
-  const context = await browser.newContext({
-    recordHar: { path: har_path },
+  // recordHar.mode "full" preserves redirects/iframes/popups; content "embed" keeps
+  // bodies inline as base64 — required by CertificateBase::loadHiddenFieldsFromString
+  // (Workspace/cnd app/Certificates/CertificateBase.php) which parses HTML/JSON bodies.
+  const context: BrowserContext = await browser.newContext({
+    recordHar: { path: har_path, mode: "full", content: "embed" },
+    acceptDownloads: true,
     userAgent:
       "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
     viewport: { width: 1920, height: 1080 },
@@ -125,6 +165,40 @@ export async function browserCapture(input: BrowserCaptureInput): Promise<Browse
 
   const page = await context.newPage();
 
+  // Pattern from qscraping certificateRJSINCAD.js (lines 23-33): collect popups
+  // opened via window.open / target=_blank so steps can target them by page_index.
+  const extraPages: Page[] = [];
+  context.on('page', async (newPage) => {
+    extraPages.push(newPage);
+    try { await newPage.waitForLoadState('domcontentloaded', { timeout: 15000 }); } catch { /* still usable */ }
+  });
+
+  // Capture PDF binaries — two complementary strategies:
+  // (a) Inline PDF responses via page.on('response') — pattern from certificateCE.js:151-161
+  // (b) Browser download dialogs (Content-Disposition: attachment) via page.on('download')
+  let pdfFromResponse: Buffer | null = null;
+  let pdfSavedFromDownload = false;
+
+  const attachPdfHooks = (target: Page) => {
+    target.on('response', async (response) => {
+      try {
+        const ct = (response.headers()['content-type'] ?? '').toLowerCase();
+        if (response.status() === 200 && (ct.includes('pdf') || ct.includes('octet-stream'))) {
+          const buf = await response.body();
+          if (buf && buf.length > 0) pdfFromResponse = buf;
+        }
+      } catch { /* response stream may already be consumed */ }
+    });
+    target.on('download', async (dl) => {
+      try {
+        await dl.saveAs(pdf_path);
+        pdfSavedFromDownload = true;
+      } catch { /* best-effort */ }
+    });
+  };
+  attachPdfHooks(page);
+  context.on('page', attachPdfHooks);
+
   await page.route('**/*', (route: any) => {
     if (BLOCKED_RESOURCES.includes(route.request().resourceType())) {
       route.abort();
@@ -133,33 +207,65 @@ export async function browserCapture(input: BrowserCaptureInput): Promise<Browse
     }
   });
 
+  let failed_step: number | undefined;
+  let failure_reason: string | undefined;
+
   try {
     if (nav_steps && nav_steps.length > 0) {
-      // Execute precise steps provided by Claude after HTML analysis
-      for (const step of nav_steps) {
+      for (let i = 0; i < nav_steps.length; i++) {
+        const step = nav_steps[i]!;
+        failed_step = i;
+
+        const target: Page = pickPage(page, extraPages, step.page_index);
+
         switch (step.action) {
           case 'goto':
-            await page.goto(step.url!, { waitUntil: 'domcontentloaded', timeout: 60000 });
-            await page.waitForLoadState('networkidle', { timeout: 15000 }).catch(() => {});
+            await target.goto(step.url!, { waitUntil: 'domcontentloaded', timeout: 60000 });
+            await target.waitForLoadState('networkidle', { timeout: 15000 }).catch(() => {});
             break;
+
           case 'fill':
-            await page.locator(step.selector!).first().click();
-            await fillWithDelay(page, step.selector!, step.value ?? '');
+            await target.locator(step.selector!).first().click();
+            await fillWithDelay(target, step.selector!, step.value ?? '');
             break;
+
           case 'click':
-            await page.locator(step.selector!).first().click();
-            await page.waitForLoadState('networkidle', { timeout: 20000 }).catch(() => {});
+            await target.locator(step.selector!).first().click();
+            await target.waitForLoadState('networkidle', { timeout: 20000 }).catch(() => {});
             break;
+
           case 'select':
-            await page.locator(step.selector!).first().selectOption(step.value ?? '');
+            await target.locator(step.selector!).first().selectOption(step.value ?? '');
             break;
+
           case 'wait':
-            await page.waitForTimeout(step.ms ?? 1000);
+            await target.waitForTimeout(step.ms ?? 1000);
             break;
+
+          case 'frame_fill': {
+            if (!step.frame_url) throw new Error("frame_fill requires frame_url");
+            const frame = await findFrame(target, step.frame_url);
+            await frame.locator(step.selector!).first().click();
+            await fillWithDelay(frame, step.selector!, step.value ?? '');
+            break;
+          }
+
+          case 'frame_click': {
+            if (!step.frame_url) throw new Error("frame_click requires frame_url");
+            const frame = await findFrame(target, step.frame_url);
+            await frame.locator(step.selector!).first().click();
+            await target.waitForLoadState('networkidle', { timeout: 20000 }).catch(() => {});
+            break;
+          }
         }
       }
+      failed_step = undefined;
+
+      // Give late XHR/polling/redirects a chance to complete and land in HAR.
+      await page.waitForTimeout(2000);
     } else {
-      // Fallback: generic selectors for when nav_steps are not provided
+      // Fallback: legacy heuristic for when nav_steps is omitted. Kept for backwards
+      // compat; /auto always supplies nav_steps so this path is rarely taken.
       const MAX_ATTEMPTS = 3;
       for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
         try {
@@ -173,7 +279,7 @@ export async function browserCapture(input: BrowserCaptureInput): Promise<Browse
       }
 
       if (inputs.length > 0) {
-        const cnpj = inputs[0];
+        const cnpj = inputs[0]!;
         for (const sel of CNPJ_SELECTORS) {
           try {
             const el = page.locator(sel).first();
@@ -201,10 +307,23 @@ export async function browserCapture(input: BrowserCaptureInput): Promise<Browse
 
       await page.waitForTimeout(2000);
     }
+  } catch (err) {
+    failure_reason = (err as Error).message;
+    const stepInfo = failed_step !== undefined ? ` at step ${failed_step}` : '';
+    throw new Error(`browserCapture failed${stepInfo}: ${failure_reason}`);
   } finally {
+    // If response listener captured a PDF and the download path didn't fire, persist it.
+    if (!pdfSavedFromDownload && pdfFromResponse && !(await fileExists(pdf_path))) {
+      try { await writeFile(pdf_path, pdfFromResponse); } catch { /* best-effort */ }
+    }
     await context.close();
     await browser.close();
   }
 
-  return { har_path };
+  const out: BrowserCaptureOutput = { har_path };
+  if (await fileExists(pdf_path)) out.pdf_path = pdf_path;
+  if (extraPages.length > 0) out.popup_pages = extraPages.length;
+  if (failed_step !== undefined) out.failed_step = failed_step;
+  if (failure_reason) out.failure_reason = failure_reason;
+  return out;
 }

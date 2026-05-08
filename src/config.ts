@@ -21,6 +21,8 @@ export const GIT_USER_EMAIL = optional("GIT_USER_EMAIL", "mcp@questores.com.br")
 export const WORK_DIR = required("WORK_DIR");
 export const PHP_BINARY = optional("PHP_BINARY", "php");
 
+export const BROWSER_HEADLESS = optional("BROWSER_HEADLESS", "false") === "true";
+
 // Docker: when set, artisan commands run inside the container instead of host PHP
 export const DOCKER_CONTAINER = optional("DOCKER_CONTAINER", "");
 export const DOCKER_WORKING_DIR = optional("DOCKER_WORKING_DIR", "/var/www/html");

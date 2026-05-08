@@ -126,9 +126,25 @@ O objetivo é capturar o tráfego HTTP do portal para que o código PHP possa re
 
 Monte `nav_steps` seguindo as `instrucoes` da tarefa: navegue pelo fluxo de emissão usando o CNPJ e inputs adicionais fornecidos, até obter a certidão. Não se preocupe com seletores específicos — o objetivo é concluir o fluxo para gerar o HAR.
 
+**Actions disponíveis em `nav_steps`:**
+- `goto` (`url`) — navega na aba alvo
+- `fill` (`selector`, `value`) — limpa o campo e digita
+- `click` (`selector`) — clica
+- `select` (`selector`, `value`) — seleciona option
+- `wait` (`ms`) — espera fixa
+- `frame_fill` / `frame_click` (`selector`, `frame_url`) — atua dentro de um iframe localizado por substring de URL (ex.: `frame_url: "/iframe/municipal"`, ou `frame_url: "recaptcha/api2/anchor"`). Usado em portais Betha clássico, Fiorilli antigo e similares.
+
+**Múltiplas abas/popups:** quando o portal abre uma nova aba via `window.open` ou `target="_blank"` (ex.: RJ SINCAD, alguns municipais que abrem o PDF em popup), use `page_index` no step: `0` (default) é a aba principal, `1` é o primeiro popup detectado, `2` o segundo, e assim por diante. As requisições de todas as abas caem no mesmo HAR.
+
+**Output relevante:**
+- `har_path` — sempre presente
+- `pdf_path` — preenchido quando o portal devolveu PDF (Content-Type pdf/octet-stream ou download direto). Útil para validar que o fluxo terminou.
+- `popup_pages` — número de popups detectados (use isso para confirmar que `page_index` foi necessário)
+- Em falha, a mensagem de erro inclui `at step N` apontando o índice do step que quebrou. Use isso para ajustar `nav_steps` na 2ª tentativa.
+
 Chame `pipeline_browser_capture` com `nav_steps` preenchido.
 
-Se falhar, ajuste a navegação e tente novamente (até 2 tentativas).
+Se falhar, identifique o step apontado pela mensagem de erro, ajuste-o e tente novamente (até 2 tentativas).
 
 ---
 

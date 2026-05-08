@@ -51,11 +51,13 @@ export interface InterpretFlowOutput {
 }
 
 export interface NavStep {
-  action: "goto" | "fill" | "click" | "wait" | "select";
-  url?: string;       // goto
-  selector?: string;  // fill, click, select
-  value?: string;     // fill, select
-  ms?: number;        // wait
+  action: "goto" | "fill" | "click" | "wait" | "select" | "frame_fill" | "frame_click";
+  url?: string;        // goto
+  selector?: string;   // fill, click, select, frame_*
+  value?: string;      // fill, select
+  ms?: number;         // wait
+  frame_url?: string;  // substring/regex para localizar frame quando action=frame_*
+  page_index?: number; // 0 = aba principal (default), 1+ = popup detectado por context.on('page')
 }
 
 export interface TaskPlan {

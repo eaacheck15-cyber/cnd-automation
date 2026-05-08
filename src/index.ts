@@ -78,16 +78,18 @@ server.tool(
 // ─── Tool 3: pipeline_browser_capture ────────────────────────────────────────
 
 const NavStepSchema = z.object({
-  action:   z.enum(["goto", "fill", "click", "wait", "select"]),
-  url:      z.string().optional().describe("URL to navigate to (goto)"),
-  selector: z.string().optional().describe("CSS/Playwright selector (fill, click, select)"),
-  value:    z.string().optional().describe("Value to fill or select option (fill, select)"),
-  ms:       z.number().optional().describe("Milliseconds to wait (wait)"),
+  action:     z.enum(["goto", "fill", "click", "wait", "select", "frame_fill", "frame_click"]),
+  url:        z.string().optional().describe("URL to navigate to (goto)"),
+  selector:   z.string().optional().describe("CSS/Playwright selector (fill, click, select, frame_*)"),
+  value:      z.string().optional().describe("Value to fill or select option (fill, select, frame_fill)"),
+  ms:         z.number().optional().describe("Milliseconds to wait (wait)"),
+  frame_url:  z.string().optional().describe("URL substring used to locate the iframe for frame_fill/frame_click (e.g. 'recaptcha/api2/anchor', '/iframe/municipal')"),
+  page_index: z.number().optional().describe("Target page: 0 (default) for the main tab, 1+ for popups opened via window.open / target=_blank — populated in order of appearance"),
 });
 
 server.tool(
   "pipeline_browser_capture",
-  "Open Playwright browser, execute the certificate issuance flow, and capture a full HAR file to WORK_DIR/har/{task_id}.har. IMPORTANT: before calling this tool, use WebFetch to load the portal URL and analyze the HTML — identify the exact selectors for input fields (CNPJ, carnê, inscrição, etc.) and submit buttons. Then build nav_steps with precise actions (goto, fill, click) based on that analysis. If nav_steps is provided, the browser executes them exactly; otherwise falls back to generic CNPJ/submit selector heuristics (unreliable).",
+  "Open Playwright browser, execute the certificate issuance flow, and capture a full HAR file to WORK_DIR/har/{task_id}.har. The HAR is recorded with mode='full' and content='embed' so HTML/JSON/PDF response bodies arrive inline (required by the CND PHP code that parses them via loadHiddenFieldsFromString). Supports iframes (frame_fill/frame_click + frame_url) and popups/new tabs (page_index — 0=main, 1+=window.open). When the portal returns a PDF (Content-Type pdf/octet-stream or Content-Disposition attachment), it is saved to WORK_DIR/har/{task_id}.pdf and returned as pdf_path. On failure the error message includes the failed step index. IMPORTANT: before calling this tool, use WebFetch to load the portal URL and analyze the HTML — identify the exact selectors for input fields and submit buttons. Then build nav_steps with precise actions based on that analysis.",
   {
     task_id:       z.string(),
     url:           z.string().describe("Main URL (used only when nav_steps is empty as fallback entry point)"),
