@@ -1,6 +1,20 @@
 import fs from "fs";
 import path from "path";
-import { REDMINE_URL, REDMINE_API_KEY, REDMINE_PROJECT_ID, TASK_QUEUE_PATH, STATE_DIR } from "../config.js";
+import {
+  REDMINE_URL,
+  REDMINE_API_KEY,
+  REDMINE_PROJECT_ID,
+  REDMINE_ASSIGNED_TO_ID,
+  REDMINE_ASSIGNED_TO_NAME,
+  TASK_QUEUE_PATH,
+  STATE_DIR,
+} from "../config.js";
+
+function filterByAssignee(issues: RedmineIssue[]): RedmineIssue[] {
+  if (!REDMINE_ASSIGNED_TO_NAME) return issues;
+  const target = REDMINE_ASSIGNED_TO_NAME.trim().toLowerCase();
+  return issues.filter((i) => i.assigned_to?.name?.trim().toLowerCase() === target);
+}
 
 export async function updateRedmineIssue(input: {
   issue_id: number;
@@ -73,6 +87,7 @@ async function fetchAndSaveQueue(): Promise<TaskQueue> {
     offset: "0",
     limit: "100",
   });
+  if (REDMINE_ASSIGNED_TO_ID) params.set("assigned_to_id", REDMINE_ASSIGNED_TO_ID);
 
   const url = `${REDMINE_URL}/issues.json?${params}`;
   const response = await fetch(url, {
@@ -84,11 +99,12 @@ async function fetchAndSaveQueue(): Promise<TaskQueue> {
   }
 
   const data = (await response.json()) as RedmineIssuesResponse;
+  const filtered = filterByAssignee(data.issues);
   const queue: TaskQueue = {
     fetched_at: new Date().toISOString(),
-    total_count: data.total_count,
+    total_count: filtered.length,
     cursor: 0,
-    tasks: data.issues,
+    tasks: filtered,
   };
   saveQueue(queue);
   return queue;
@@ -108,7 +124,8 @@ export async function getRedmineTasks(input: {
   });
 
   if (input.status_id) params.set("status_id", input.status_id);
-  if (input.assigned_to_id) params.set("assigned_to_id", input.assigned_to_id);
+  const assignedToId = input.assigned_to_id ?? REDMINE_ASSIGNED_TO_ID;
+  if (assignedToId) params.set("assigned_to_id", assignedToId);
 
   const url = `${REDMINE_URL}/issues.json?${params}`;
   const response = await fetch(url, {
@@ -120,15 +137,16 @@ export async function getRedmineTasks(input: {
   }
 
   const data = (await response.json()) as RedmineIssuesResponse;
+  const filtered = filterByAssignee(data.issues);
   const queue: TaskQueue = {
     fetched_at: new Date().toISOString(),
-    total_count: data.total_count,
+    total_count: filtered.length,
     cursor: 0,
-    tasks: data.issues,
+    tasks: filtered,
   };
   saveQueue(queue);
 
-  return { issues: data.issues, total_count: data.total_count, queue_saved: true };
+  return { issues: filtered, total_count: filtered.length, queue_saved: true };
 }
 
 export async function getNextTask(): Promise<{

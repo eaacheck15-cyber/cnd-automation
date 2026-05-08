@@ -30,6 +30,11 @@ export const DOCKER_WORKING_DIR = optional("DOCKER_WORKING_DIR", "/var/www/html"
 export const REDMINE_URL = optional("REDMINE_URL", "https://redmine.questor.com.br");
 export const REDMINE_API_KEY = required("REDMINE_API_KEY");
 export const REDMINE_PROJECT_ID = optional("REDMINE_PROJECT_ID", "1106");
+export const REDMINE_ASSIGNED_TO_NAME = optional(
+  "REDMINE_ASSIGNED_TO_NAME",
+  "Questor Sistemas - Analista de Negocio Web/Imobiliário"
+);
+export const REDMINE_ASSIGNED_TO_ID = optional("REDMINE_ASSIGNED_TO_ID", "");
 export const REDMINE_STATUS_EM_DESENV = optional("REDMINE_STATUS_EM_DESENV", "57");
 export const REDMINE_STATUS_AG_REVIEW = optional("REDMINE_STATUS_AG_REVIEW", "84");
 export const REDMINE_STATUS_AG_DESENV = optional("REDMINE_STATUS_AG_DESENV", "56");

@@ -51,13 +51,25 @@ export interface InterpretFlowOutput {
 }
 
 export interface NavStep {
-  action: "goto" | "fill" | "click" | "wait" | "select" | "frame_fill" | "frame_click";
+  action:
+    | "goto"
+    | "fill"
+    | "click"
+    | "wait"
+    | "select"
+    | "frame_fill"
+    | "frame_click"
+    | "click_text"
+    | "fill_field"
+    | "select_text";
   url?: string;        // goto
   selector?: string;   // fill, click, select, frame_*
-  value?: string;      // fill, select
+  value?: string;      // fill, select, fill_field, select_text
   ms?: number;         // wait
   frame_url?: string;  // substring/regex para localizar frame quando action=frame_*
   page_index?: number; // 0 = aba principal (default), 1+ = popup detectado por context.on('page')
+  text?: string;       // texto visível do botão/link (click_text)
+  label?: string;      // rótulo visível do campo (fill_field, select_text)
 }
 
 export interface TaskPlan {

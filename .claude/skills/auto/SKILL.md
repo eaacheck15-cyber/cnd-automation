@@ -124,27 +124,47 @@ Salve: `url`, `inputs`, `expected_flow`, `complexity`.
 
 O objetivo é capturar o tráfego HTTP do portal para que o código PHP possa replicar as requisições. O browser é apenas o meio para navegar e disparar esse tráfego.
 
-Monte `nav_steps` seguindo as `instrucoes` da tarefa: navegue pelo fluxo de emissão usando o CNPJ e inputs adicionais fornecidos, até obter a certidão. Não se preocupe com seletores específicos — o objetivo é concluir o fluxo para gerar o HAR.
+Monte `nav_steps` seguindo as `instrucoes` da tarefa: cada linha da seção "Instrução Emissão No site" vira **1 step**, na mesma ordem. O número de steps acompanha o número de linhas — pode ser 2 ou 12, sem limite.
 
-**Actions disponíveis em `nav_steps`:**
+**Estratégia:** prefira sempre as actions baseadas em **texto visível** (`click_text`, `fill_field`, `select_text`). Os textos entre aspas na instrução (ex.: `Clicar em "buscar"`, `Digitar o CNPJ "..."`, `Natureza "Mobiliário (Empresas)"`) são exatamente o que essas actions esperam. Só caia em seletor CSS (`click`/`fill`/`select`) quando não houver texto distintivo, ou em `frame_*` para iframes.
+
+**Actions baseadas em texto (preferenciais):**
+- `click_text` (`text`) — clica em botão/link/input pelo texto visível. Ex.: linha "Clicar em 'buscar'" → `{action:"click_text", text:"buscar"}`
+- `fill_field` (`label`, `value`) — preenche input pelo rótulo visível. Ex.: "Digitar o CNPJ '46.201...'" → `{action:"fill_field", label:"CNPJ", value:"46201083002474"}`
+- `select_text` (`label`, `value`) — seleciona option pelo texto. Ex.: "Natureza 'Mobiliário (Empresas)'" → `{action:"select_text", label:"Natureza", value:"Mobiliário (Empresas)"}`
+
+**Actions baseadas em seletor (fallback):**
 - `goto` (`url`) — navega na aba alvo
 - `fill` (`selector`, `value`) — limpa o campo e digita
 - `click` (`selector`) — clica
-- `select` (`selector`, `value`) — seleciona option
+- `select` (`selector`, `value`) — seleciona option pelo value
 - `wait` (`ms`) — espera fixa
 - `frame_fill` / `frame_click` (`selector`, `frame_url`) — atua dentro de um iframe localizado por substring de URL (ex.: `frame_url: "/iframe/municipal"`, ou `frame_url: "recaptcha/api2/anchor"`). Usado em portais Betha clássico, Fiorilli antigo e similares.
 
 **Múltiplas abas/popups:** quando o portal abre uma nova aba via `window.open` ou `target="_blank"` (ex.: RJ SINCAD, alguns municipais que abrem o PDF em popup), use `page_index` no step: `0` (default) é a aba principal, `1` é o primeiro popup detectado, `2` o segundo, e assim por diante. As requisições de todas as abas caem no mesmo HAR.
 
 **Output relevante:**
-- `har_path` — sempre presente
-- `pdf_path` — preenchido quando o portal devolveu PDF (Content-Type pdf/octet-stream ou download direto). Útil para validar que o fluxo terminou.
+- `har_path` — sempre presente, mesmo em falha (steps que rodaram já estão capturados)
+- `pdf_path` — preenchido quando o portal devolveu PDF. Útil para validar que o fluxo terminou.
 - `popup_pages` — número de popups detectados (use isso para confirmar que `page_index` foi necessário)
-- Em falha, a mensagem de erro inclui `at step N` apontando o índice do step que quebrou. Use isso para ajustar `nav_steps` na 2ª tentativa.
+- `failed_step` — índice do step que falhou (auto-retry interno já tentou 2x antes de marcar como falha)
+- `failure_reason` — mensagem do erro do Playwright
+- `diagnostics` — snapshot textual da página no momento da falha:
+  - `current_url`, `page_title` — detecta redirect inesperado (login, manutenção, captcha bloqueando)
+  - `visible_elements` — lista de botões/links/inputs/selects visíveis com `text`, `label`, `name`, `id`. Compare com o texto da instrução para descobrir o nome real do elemento.
+  - `dom_snippet` — body HTML truncado em 8KB para inspeção pontual
 
 Chame `pipeline_browser_capture` com `nav_steps` preenchido.
 
-Se falhar, identifique o step apontado pela mensagem de erro, ajuste-o e tente novamente (até 2 tentativas).
+Se vier `failed_step`, **use `diagnostics.visible_elements`** para descobrir o texto/label real e ajuste só aquele step na 2ª tentativa (não refaça o `nav_steps` inteiro). Limite total: 2 tentativas.
+
+**Se a 2ª tentativa também voltar com `failed_step`** (HAR incompleto), não desista — siga em frente usando o que já existe no projeto:
+
+- **MANUTENÇÃO**: a classe PHP atual já implementa o fluxo HTTP completo. Rodar `pipeline_test` com o CNPJ insere na fila do MongoDB e o artisan executa o código existente, revelando onde o portal real quebra hoje — costuma ser mais informativo que HAR parcial. Pule os PASSOS 8–10A, vá direto ao 10B usando o código atual sem alterações iniciais, analise o `artisan_output` no PASSO 11 (o ponto que falha aponta o endpoint/parâmetro que mudou) e corrija com base nesse output + `diagnostics`.
+
+- **NOVA IMPLEMENTAÇÃO**: procure classes existentes que atendam URLs parecidas (mesmo domínio, mesmo sistema/fornecedor). Ex.: URL `gpi07.cloud.el.com.br` → grep por outras classes que batem em `*.cloud.el.com.br` ou herdam da mesma base. Use uma como template, adapte ao novo CNPJ/portal e rode `pipeline_test`. Só registre falha (PASSO 12) se o teste não devolver PDF/dados após até 3 tentativas no PASSO 11.
+
+Em ambos os casos, use `failure_reason` + `diagnostics.current_url`/`page_title` para compor a mensagem da falha quando ela for inevitável.
 
 ---
 
