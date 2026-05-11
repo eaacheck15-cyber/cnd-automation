@@ -40,8 +40,11 @@ function mongoExec(script: string): string {
   return result.stdout.trim();
 }
 
-function mongoInsertTestRecord(class_name: string, cnpj: string, nome: string): string {
-  const doc = {
+// Upsert a single test record for {classname, inscfederal, external:true}.
+// If a previous test left one in the queue, reuse it (reset attempts/status)
+// instead of piling up duplicates across retries.
+function mongoUpsertTestRecord(class_name: string, cnpj: string, nome: string): string {
+  const setDoc = {
     cliente: cnpj,
     classname: class_name,
     category: null,
@@ -60,17 +63,21 @@ function mongoInsertTestRecord(class_name: string, cnpj: string, nome: string): 
     external: true,
   };
   const script = `
-const doc = ${JSON.stringify(doc)};
-doc.datainicio = new Date();
-const r = db.listaespera.insertOne(doc);
-print(r.insertedId.toString());
+const filter = { classname: ${JSON.stringify(class_name)}, inscfederal: ${JSON.stringify(cnpj)}, external: true };
+const set = ${JSON.stringify(setDoc)};
+set.datainicio = new Date();
+db.listaespera.updateOne(filter, { $set: set }, { upsert: true });
+const r = db.listaespera.findOne(filter, { _id: 1 });
+print(r._id.toString());
 `;
   return mongoExec(script);
 }
 
-function mongoCleanupTestRecord(insertedId: string): void {
+function mongoCleanupTestRecord(class_name: string, cnpj: string): void {
   try {
-    mongoExec(`db.listaespera.deleteOne({ _id: ObjectId('${insertedId}') });`);
+    mongoExec(
+      `db.listaespera.deleteMany({ classname: ${JSON.stringify(class_name)}, inscfederal: ${JSON.stringify(cnpj)}, external: true });`
+    );
   } catch {
     // best-effort cleanup
   }
@@ -108,30 +115,51 @@ export async function testCertificate(input: TestCertificateInput): Promise<Test
     configErrors.push(`config/certificates.php: ${(err as Error).message}`);
   }
 
-  // 4. Insert test record into MongoDB so artisan has something to process
-  let testRecordId: string | null = null;
+  // 4. Upsert test record in MongoDB — reuse existing row across retries
+  //    instead of creating a duplicate every time.
   try {
-    testRecordId = mongoInsertTestRecord(class_name, cnpj, nome ?? "EMPRESA TESTE");
+    mongoUpsertTestRecord(class_name, cnpj, nome ?? "EMPRESA TESTE");
   } catch (err: any) {
-    configErrors.push(`MongoDB insert failed: ${(err as Error).message}`);
+    configErrors.push(`MongoDB upsert failed: ${(err as Error).message}`);
   }
 
-  // 5. Run artisan issue inside Docker (PHP 7.3) or host
-  let artisan_output = "";
+  // 5a. Register class in MongoDB and remove all classes from maintenance.
+  //     `update-class-list` adds new classes (it puts them in maintenance by default).
+  //     `remove-all-from-maintenance` releases them so `issue` actually runs.
+  //     Both idempotent — safe to run every test.
+  let prep_output = "";
   try {
-    artisan_output = execSync(
+    prep_output += execSync(artisanExec(`update-class-list`), {
+      cwd: GIT_WORKING_DIR, encoding: "utf-8", timeout: 60000,
+    });
+  } catch (err: any) {
+    prep_output += (err.stdout ?? "") + "\n" + (err.stderr ?? "");
+    configErrors.push("artisan update-class-list failed — see artisan_output");
+  }
+  try {
+    prep_output += execSync(artisanExec(`remove-all-from-maintenance`), {
+      cwd: GIT_WORKING_DIR, encoding: "utf-8", timeout: 60000,
+    });
+  } catch (err: any) {
+    prep_output += (err.stdout ?? "") + "\n" + (err.stderr ?? "");
+    configErrors.push("artisan remove-all-from-maintenance failed — see artisan_output");
+  }
+
+  // 5b. Run artisan issue inside Docker (PHP 7.3) or host
+  let artisan_output = prep_output;
+  try {
+    artisan_output += execSync(
       artisanExec(`issue --class=${class_name}`),
       { cwd: GIT_WORKING_DIR, encoding: "utf-8", timeout: 120000 }
     );
   } catch (err: any) {
-    artisan_output = (err.stdout ?? "") + "\n" + (err.stderr ?? "");
+    artisan_output += (err.stdout ?? "") + "\n" + (err.stderr ?? "");
     configErrors.push("artisan issue exited with error — see artisan_output");
   }
 
-  // 6. Cleanup: if artisan didn't consume the record (failure), remove it
-  if (testRecordId) {
-    mongoCleanupTestRecord(testRecordId);
-  }
+  // 6. Cleanup: remove any leftover external test records for this class+cnpj
+  //    (artisan may have left them with status=Erro/Concluído).
+  mongoCleanupTestRecord(class_name, cnpj);
 
   const lower = artisan_output.toLowerCase();
   const hasSuccess =

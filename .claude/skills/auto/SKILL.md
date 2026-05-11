@@ -9,6 +9,18 @@ Você está operando em modo autônomo. Execute cada passo na ordem abaixo, sem 
 
 ---
 
+### Pré-requisito de ambiente (não pular)
+
+O projeto `C:\Workspace\cnd` é Laravel 6 e **só roda em PHP 7.4**. PHP 8+ no host faz o artisan crashar no boot (incompatibilidade `ArrayAccess`/`ReflectionParameter`). Por isso o `pipeline_test` **DEVE** executar dentro do container Docker `configs-development-app-1` (que tem PHP 7.3.33 e o diretório `C:\Workspace\cnd\app` montado em `/var/www/html/app`).
+
+Como garantir antes de qualquer `pipeline_test`:
+
+1. Confira que `C:\Users\Matheus.Rosa\.claude.json` (config global do Claude Code — não há `.mcp.json` no projeto) tem `DOCKER_CONTAINER=configs-development-app-1` e `DOCKER_WORKING_DIR=/var/www/html` no bloco `env` do servidor `cnd-pipeline`.
+2. Confira que o container está de pé: `docker ps --filter name=configs-development-app-1 --format "{{.Names}}"`.
+3. Se o `artisan_output` voltar com paths Windows (`C:\Workspace\cnd\vendor\...`) ou erros de `ArrayAccess`/`ReflectionParameter::getClass`, é sinal de que o MCP server está usando o PHP do host — **peça ao usuário para reiniciar o MCP `cnd-pipeline`** (env só é lida no spawn do processo) e só então retome. Não tente "consertar" o helpers.php nem propor downgrade do PHP do host, esses caminhos já foram descartados.
+
+---
+
 ### PASSO 1 — Verificar pausa
 
 Verifique se o arquivo `c:\Workspace\cnd-automation\STOP` existe:

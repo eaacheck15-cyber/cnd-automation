@@ -75,6 +75,19 @@ const SUBMIT_SELECTORS = [
 
 const BLOCKED_RESOURCES = ['image', 'stylesheet', 'font', 'media'];
 
+// Hosts whose requests must always pass through, even for blocked resource types.
+// CapMonster extension and reCAPTCHA/hCaptcha/Turnstile challenges need their
+// images, CSS and fonts to render — otherwise the solver can't classify tiles
+// and the captcha never produces a token.
+const CAPTCHA_HOST_WHITELIST = [
+  'recaptcha.net',
+  'google.com/recaptcha',
+  'gstatic.com/recaptcha',
+  'www.gstatic.com',
+  'hcaptcha.com',
+  'challenges.cloudflare.com',
+];
+
 type FillTarget = Page | Frame;
 
 async function fillWithDelay(target: FillTarget, selector: string, value: string, delay = 80) {
@@ -395,8 +408,15 @@ export async function browserCapture(input: BrowserCaptureInput): Promise<Browse
   context.on('page', attachPdfHooks);
 
   await page.route('**/*', (route: any) => {
-    if (BLOCKED_RESOURCES.includes(route.request().resourceType())) {
-      route.abort();
+    const req = route.request();
+    if (BLOCKED_RESOURCES.includes(req.resourceType())) {
+      const url = req.url();
+      const whitelisted = CAPTCHA_HOST_WHITELIST.some(h => url.includes(h));
+      if (whitelisted) {
+        route.continue();
+      } else {
+        route.abort();
+      }
     } else {
       route.continue();
     }
