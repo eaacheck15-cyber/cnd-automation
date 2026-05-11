@@ -1,8 +1,16 @@
-import { chromium, type Browser, type BrowserContext, type Frame, type Page } from "playwright";
+import { chromium, type BrowserContext, type Frame, type Page } from "playwright";
 import { mkdir, writeFile, stat } from "fs/promises";
 import path from "path";
+import { fileURLToPath } from "url";
 import { HAR_DIR, BROWSER_HEADLESS } from "../config.js";
 import type { NavStep } from "../types.js";
+
+// Project-root-relative paths so the extension travels with the repo and the
+// persistent profile (CapMonster API key) survives across runs on the same machine.
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const CAPMONSTER_EXT_DIR = path.resolve(__dirname, "../../resources/capmonster");
+const BROWSER_PROFILE_DIR = path.resolve(__dirname, "../../browser-profile");
 
 export interface BrowserCaptureInput {
   task_id: string;
@@ -276,11 +284,27 @@ export async function browserCapture(input: BrowserCaptureInput): Promise<Browse
   const har_path = path.join(HAR_DIR, `${task_id}.har`);
   const pdf_path = path.join(HAR_DIR, `${task_id}.pdf`);
 
-  const browser: Browser = await chromium.launch({
+  await mkdir(BROWSER_PROFILE_DIR, { recursive: true });
+
+  // launchPersistentContext is required to load unpacked extensions (CapMonster).
+  // The userDataDir persists the CapMonster API key across runs — configure once
+  // per machine by opening the extension popup and pasting the key.
+  const context: BrowserContext = await chromium.launchPersistentContext(BROWSER_PROFILE_DIR, {
     headless: false,
     slowMo: 300,
     timeout: 80000,
+    acceptDownloads: true,
+    userAgent:
+      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    viewport: { width: 1920, height: 1080 },
+    locale: 'pt-BR',
+    extraHTTPHeaders: {
+      'Accept-Language': 'pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7',
+    },
+    recordHar: { path: har_path, mode: "full", content: "embed" },
     args: [
+      `--disable-extensions-except=${CAPMONSTER_EXT_DIR}`,
+      `--load-extension=${CAPMONSTER_EXT_DIR}`,
       '--autoplay-policy=user-gesture-required',
       '--disable-background-networking',
       '--disable-background-timer-throttling',
@@ -323,28 +347,18 @@ export async function browserCapture(input: BrowserCaptureInput): Promise<Browse
     ],
   });
 
-  // recordHar.mode "full" preserves redirects/iframes/popups; content "embed" keeps
-  // bodies inline as base64 — required by CertificateBase::loadHiddenFieldsFromString
-  // (Workspace/cnd app/Certificates/CertificateBase.php) which parses HTML/JSON bodies.
-  const context: BrowserContext = await browser.newContext({
-    recordHar: { path: har_path, mode: "full", content: "embed" },
-    acceptDownloads: true,
-    userAgent:
-      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-    viewport: { width: 1920, height: 1080 },
-    locale: 'pt-BR',
-    extraHTTPHeaders: {
-      'Accept-Language': 'pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7',
-    },
-  });
-
+  // recordHar mode/content moved into launchPersistentContext above. The HAR is
+  // configured with mode="full" + content="embed" so HTML/JSON/PDF bodies arrive
+  // inline (required by CertificateBase::loadHiddenFieldsFromString).
   await context.addInitScript(() => {
     Object.defineProperty(navigator, 'webdriver', { get: () => false });
     Object.defineProperty(navigator, 'plugins', { get: () => [1, 2, 3] });
     Object.defineProperty(navigator, 'languages', { get: () => ['pt-BR', 'pt', 'en-US'] });
   });
 
-  const page = await context.newPage();
+  // Persistent context opens with one blank page already — reuse it instead of
+  // creating a second (avoids an extra tab and noisy 'page' events).
+  const page = context.pages()[0] ?? await context.newPage();
 
   // Pattern from qscraping certificateRJSINCAD.js (lines 23-33): collect popups
   // opened via window.open / target=_blank so steps can target them by page_index.
@@ -525,8 +539,8 @@ export async function browserCapture(input: BrowserCaptureInput): Promise<Browse
     if (!pdfSavedFromDownload && pdfFromResponse && !(await fileExists(pdf_path))) {
       try { await writeFile(pdf_path, pdfFromResponse); } catch { /* best-effort */ }
     }
+    // closing the persistent context shuts down the browser as well
     await context.close();
-    await browser.close();
   }
 
   const out: BrowserCaptureOutput = { har_path };

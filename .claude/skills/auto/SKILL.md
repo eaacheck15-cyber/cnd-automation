@@ -75,20 +75,11 @@ Leia o arquivo com a ferramenta Read. Esse código será a base para as correç�
 
 ---
 
-### PASSO 4 — Marcar tarefa como Em Desenvolvimento
-
-Chame `redmine_update_task`:
-- `issue_id`: id da tarefa
-- `status_id`: `"57"` (Em Desenv.)
-- `notes`: `"Tarefa iniciada pelo pipeline automático."`
-
----
-
-### PASSO 5 — Consultar knowledge base
+### PASSO 4 — Consultar knowledge base
 
 Antes de iniciar qualquer análise, verifique se existe conhecimento acumulado sobre esta certidão ou sua base.
 
-#### 5.1 — Verificar arquivo específico da certidão
+#### 4.1 — Verificar arquivo específico da certidão
 
 ```powershell
 $path = "C:\Workspace\cnd\.claude\patterns\{federal|state}\{class_name}.md"
@@ -97,7 +88,7 @@ if (Test-Path $path) { Get-Content $path }
 
 Se existir: leia e anote fluxo, parâmetros críticos e armadilhas. Isso guiará a implementação/correção.
 
-#### 5.2 — Verificar base (somente MANUTENÇÃO)
+#### 4.2 — Verificar base (somente MANUTENÇÃO)
 
 Para tarefas de manutenção, você já sabe qual base a classe estende (lida no PASSO 3B). Verifique:
 
@@ -112,7 +103,7 @@ Se existir: leia e anote armadilhas e padrões conhecidos da base.
 
 ---
 
-### PASSO 6 — Discovery
+### PASSO 5 — Discovery
 
 Chame `pipeline_discover` com `task_id` e `task_description` (description completa da tarefa).
 
@@ -120,7 +111,7 @@ Salve: `url`, `inputs`, `expected_flow`, `complexity`.
 
 ---
 
-### PASSO 7 — Captura do browser
+### PASSO 6 — Captura do browser
 
 O objetivo é capturar o tráfego HTTP do portal para que o código PHP possa replicar as requisições. O browser é apenas o meio para navegar e disparar esse tráfego.
 
@@ -168,7 +159,7 @@ Em ambos os casos, use `failure_reason` + `diagnostics.current_url`/`page_title`
 
 ---
 
-### PASSO 8 — Extração do HAR
+### PASSO 7 — Extração do HAR
 
 Chame `pipeline_extract_har` com o `har_path` retornado no passo anterior.
 
@@ -176,7 +167,7 @@ Salve o array `flow`.
 
 ---
 
-### PASSO 9 — Interpretação do fluxo
+### PASSO 8 — Interpretação do fluxo
 
 Chame `pipeline_interpret_flow` com o `flow` extraído.
 
@@ -184,7 +175,7 @@ Salve `flow_type` e `steps`.
 
 ---
 
-### PASSO 10A — NOVA IMPLEMENTAÇÃO: gerar classe PHP
+### PASSO 9A — NOVA IMPLEMENTAÇÃO: gerar classe PHP
 
 Chame `pipeline_generate_code` com `interpretation`, `task_description`, `class_name`, `type` e `state`.
 
@@ -194,7 +185,7 @@ Chame `pipeline_test` com `class_name`, `type`, `state`, `php_code`, `cnpj` e `n
 
 ---
 
-### PASSO 10B — MANUTENÇÃO: corrigir classe PHP existente
+### PASSO 9B — MANUTENÇÃO: corrigir classe PHP existente
 
 Você já tem:
 - O código PHP atual (lido no PASSO 3B)
@@ -213,19 +204,19 @@ Chame `pipeline_test` com `class_name`, `type`, `state`, `php_code`, `cnpj` e `n
 
 ---
 
-### PASSO 11 — Retry em caso de falha no teste
+### PASSO 10 — Retry em caso de falha no teste
 
 Se o teste falhar:
 - Analise o `artisan_output`, identifique a causa raiz e corrija o código.
 - Chame `pipeline_test` novamente.
 - Repita até **3 tentativas** no total.
-- Se todas falharem → vá para PASSO 12 (falha).
+- Se todas falharem → vá para PASSO 11 (falha).
 
-Se passar → vá para PASSO 13 (sucesso).
+Se passar → vá para PASSO 12 (sucesso).
 
 ---
 
-### PASSO 12 — Registrar falha no Redmine
+### PASSO 11 — Registrar falha no Redmine
 
 Traduza o erro para uma descrição objetiva e humana. Exemplos:
 - "Captcha detectado na página de emissão — não foi possível automatizar."
@@ -237,7 +228,12 @@ Traduza o erro para uma descrição objetiva e humana. Exemplos:
 Chame `redmine_update_task`:
 - `issue_id`: id da tarefa
 - `status_id`: `"56"` (Ag. Desenv.)
-- `notes`: descrição humana do erro
+- `notes`:
+```
+Tentativa de resolução automática pela CND Automation — não foi possível concluir.
+
+Motivo: {descrição humana do erro}
+```
 
 Exiba: `❌ #{task_id} — {class_name} — {motivo}`
 
@@ -245,7 +241,7 @@ Exiba: `❌ #{task_id} — {class_name} — {motivo}`
 
 ---
 
-### PASSO 13 — Commit e encerramento com sucesso
+### PASSO 12 — Commit e encerramento com sucesso
 
 Chame `pipeline_commit` com `task_id`, `task_subject` (subject completo da tarefa), `class_name`, `type` e `state`.
 
@@ -267,18 +263,18 @@ Exiba: `✅ #{task_id} — {class_name} — commitado e atualizado no Redmine.`
 
 ---
 
-### PASSO 14 — Atualizar knowledge base
+### PASSO 13 — Atualizar knowledge base
 
 Objetivo: registrar o que funcionou para evitar redescobrir em tarefas futuras.
 
-#### 14.1 — Identificar classe base
+#### 13.1 — Identificar classe base
 
 Leia o arquivo PHP da classe para encontrar qual base ela estende:
 ```php
 class CertificateX extends CertificateServlet  // → CertificateServlet
 ```
 
-#### 14.2 — Atualizar "Última execução bem-sucedida" na base
+#### 13.2 — Atualizar "Última execução bem-sucedida" na base
 
 Localize o arquivo correspondente em `C:\Workspace\cnd\.claude\patterns\bases\{BaseClass}.md`.
 
@@ -290,7 +286,7 @@ Se existir, atualize a linha `Última execução bem-sucedida`:
 
 Se o arquivo da base não existir, crie-o em `C:\Workspace\cnd\.claude\patterns\bases\{BaseClass}.md` com o padrão observado nesta execução.
 
-#### 14.3 — Criar ou atualizar arquivo da certidão
+#### 13.3 — Criar ou atualizar arquivo da certidão
 
 Verifique se existe `C:\Workspace\cnd\.claude\patterns\{federal|state}\{class_name}.md`.
 
@@ -322,7 +318,7 @@ Conteúdo do arquivo:
 - {AAAA-MM-DD} | Tarefa #{task_id}
 ```
 
-#### 14.4 — Commit dos knowledge files
+#### 13.4 — Commit dos knowledge files
 
 Se algum arquivo de knowledge foi criado ou modificado, commite apenas esses arquivos:
 ```powershell

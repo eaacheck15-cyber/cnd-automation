@@ -20,6 +20,12 @@ npx playwright install chromium
 npm run build
 ```
 
+Clone também o repositório CND ao lado, no caminho que será informado em `GIT_WORKING_DIR` (ver Configuração):
+
+```powershell
+git clone git@gitlab.questor.com.br:timeweb/cnd.git C:\Workspace\cnd
+```
+
 ## Configuração
 
 Crie o arquivo `.claude/settings.json` com as variáveis de ambiente do servidor MCP (não commite este arquivo — ele já está no `.gitignore`):
@@ -50,6 +56,17 @@ Crie o arquivo `.claude/settings.json` com as variáveis de ambiente do servidor
 ```
 
 > **DOCKER_CONTAINER**: se o PHP rodar dentro de um container Docker, informe o nome do container (ex: `configs-development-app-1`). Deixe vazio para usar o PHP do host.
+
+### CapMonster (resolver captcha no HAR capture)
+
+O `pipeline_browser_capture` carrega a extensão [CapMonster](https://capmonster.cloud/) (versionada em `resources/capmonster/`) para resolver captchas durante a gravação do HAR. **Configure uma vez por máquina:**
+
+1. Rode qualquer `pipeline_browser_capture` (ou execute `/auto` uma vez) — vai abrir o Chromium com a extensão carregada.
+2. Clique no ícone de extensões (peça de quebra-cabeça) na barra do navegador, fixe a CapMonster.
+3. Abra o popup da CapMonster, cole sua **Client Key** do [dashboard](https://dashboard.capmonster.cloud/) e salve.
+4. Pode fechar — a chave fica salva em `browser-profile/` (gitignored) e persiste entre execuções.
+
+> A extensão é usada **apenas no HAR capture**. O código PHP em produção usa o solver próprio embutido nas classes-base da CND.
 
 ## Uso
 
