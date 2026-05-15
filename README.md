@@ -32,6 +32,39 @@ Crie o arquivo `.claude/settings.json` com as variáveis de ambiente do servidor
 
 ```json
 {
+  "permissions": {
+    "allow": [
+      "mcp__cnd-pipeline__pipeline_discover",
+      "mcp__cnd-pipeline__pipeline_browser_capture",
+      "mcp__cnd-pipeline__pipeline_extract_har",
+      "mcp__cnd-pipeline__pipeline_interpret_flow",
+      "mcp__cnd-pipeline__pipeline_generate_code",
+      "mcp__cnd-pipeline__pipeline_test",
+      "mcp__cnd-pipeline__pipeline_commit",
+      "mcp__cnd-pipeline__pipeline_run",
+      "mcp__cnd-pipeline__pipeline_get_state",
+      "mcp__cnd-pipeline__redmine_next_task",
+      "mcp__cnd-pipeline__redmine_get_tasks",
+      "mcp__cnd-pipeline__redmine_update_task",
+      "Bash(Test-Path:*)",
+      "Bash(docker ps:*)",
+      "Bash(Get-ChildItem:*)",
+      "Bash(Get-Content:*)",
+      "Bash(git -C C:\\caminho\\para\\cnd add:*)",
+      "Bash(git -C C:\\caminho\\para\\cnd commit:*)",
+      "Bash(git -C C:\\caminho\\para\\cnd status:*)",
+      "Bash(git -C C:\\caminho\\para\\cnd diff:*)",
+      "Bash(git -C C:\\caminho\\para\\cnd log:*)",
+      "Read",
+      "Write",
+      "Edit",
+      "Glob",
+      "Grep"
+    ],
+    "additionalDirectories": [
+      "C:\\caminho\\para\\cnd"
+    ]
+  },
   "mcpServers": {
     "cnd-pipeline": {
       "command": "node",
@@ -56,6 +89,8 @@ Crie o arquivo `.claude/settings.json` com as variáveis de ambiente do servidor
 ```
 
 > **DOCKER_CONTAINER**: se o PHP rodar dentro de um container Docker, informe o nome do container (ex: `configs-development-app-1`). Deixe vazio para usar o PHP do host.
+
+> **permissions**: libera as MCP tools do pipeline e os comandos Bash usados pela skill `/auto` sem prompts. Substitua `C:\\caminho\\para\\cnd` pelo caminho real onde o repo CND foi clonado (precisa bater com `GIT_WORKING_DIR` e aparecer também em `additionalDirectories` pra permitir Read/Edit fora do workspace).
 
 ### CapMonster (resolver captcha no HAR capture)
 
