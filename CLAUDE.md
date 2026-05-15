@@ -17,9 +17,65 @@ Regras:
 - O limite de 2 tentativas no HAR capture é controle de custo, não bug. Não aumentar sem conversar.
 - Falha de captcha em `artisan issue` → problema no solver PHP / herança da classe-base, não na extensão.
 
+## Redmine — transições de status
+
+Não dá pra pular direto de **Ag. Desenv. (56)** pra **Ag. Review (84)** — o Redmine aceita a chamada mas o status não muda. A sequência válida é:
+
+1. `56` Ag. Desenv. → `57` Em Desenv. (ao começar a trabalhar)
+2. `57` Em Desenv. → `84` Ag. Review (ao concluir)
+
+Se a tarefa estiver em Ag. Desenv. e precisar ir pra Ag. Review, faça **duas chamadas** de `redmine_update_task` em sequência: primeiro `status_id: "57"`, depois `status_id: "84"`.
+
+## Notas no Redmine — formato padrão
+
+Toda chamada de `redmine_update_task` que adiciona `notes` (commit/encerramento de tarefa, não a transição inicial pra "Em Desenv.") deve seguir **exatamente** este template:
+
+```
+Alterações realizadas:
+> {Implementação da classe {ClassName} para emissão automática de certidão.
+   | Correção da classe {ClassName} — {descrição curta do que foi corrigido.}}
+
+Projetos e Arquivos Modificados:
+> cnd — {caminho relativo do arquivo PHP}
+> cnd — config/certificates.php
+```
+
+Sem prosa adicional, sem detalhes técnicos de fluxo/teste — esse formato curto é o que o time consome. Detalhes técnicos vão no commit message, não na nota do Redmine.
+
 ## Pipeline — sempre usar as tools `pipeline_*`
 
 Não rodar `php artisan` direto nem invocar steps manualmente. Use `mcp__cnd-pipeline__pipeline_*` (discover, browser_capture, extract_har, interpret_flow, generate_code, test, commit, run, get_state).
+
+Ao passar CNPJ/CPF para `pipeline_test` (parâmetro `cnpj`), sempre **só dígitos**, sem pontos, barras ou hífens. O insert em `listaespera` espera o valor cru.
+
+## Estilo das classes `Certificate*` — orquestração, não script
+
+Toda classe gerada deve seguir o padrão do restante do projeto (ex.: `CertificateTRF4ProcessosDistribuidos`):
+
+- `startIssuance()` **só orquestra** — chama métodos privados com nomes que descrevem a etapa (`initSession`, `solveCaptcha`, `requestCnd`, `getUrlPdf`, etc.). Nunca tem `$this->http->...` direto.
+- `issuePDF()` também é orquestração, **mas** pode ter um `$this->http->...` direto quando for só a request final que baixa o PDF (ex.: `$response = $this->http->get($this->urlPdf); if (stringIsPdf($response->body)) $this->downloadPDF($response->body);`). Lógica de várias etapas dentro dele continua proibida.
+- Dentro de cada método privado, **use bom senso**: se duas/três requests fazem parte da mesma etapa lógica (ex.: um GET pra carregar form + POST do form na mesma sessão), pode deixá-las juntas pra não fragmentar demais. Se forem etapas distintas, vira um método por request.
+- Payloads de POST vão em `getParams*()` privados, headers em `requestHeaders*()`.
+- Parsing/extração de campos da resposta também em métodos próprios (`loadHiddenFields`, `getPossibleErrors`, `fixHtml`, etc.).
+- **Nomes canônicos:** quando o site não entrega PDF e a gente monta o HTML pra `generatePDF`, o método chama-se **`fixHtml`** (~140 ocorrências no projeto). Não inventar `buildHtml`/`renderHtml`/etc.
+
+## Registro em `config/certificates.php`
+
+O array tem três seções comentadas (`FEDERAL`, `ESTADUAL`, `MUNICIPAL`); a seção MUNICIPAL é subdividida por UF com cabeçalhos `// AC`, `// AL`, `// AM`, etc.
+
+Ao inserir uma nova classe (manualmente ou após `pipeline_test`/`pipeline_commit`):
+- Inserir **dentro da seção da esfera certa** (Federal / Estadual / Municipal).
+- Para Municipal, dentro do bloco da UF correspondente (`// PR`, `// SP`, etc.).
+- **Ordem alfabética** (case-insensitive) dentro do bloco.
+- **Nunca** deixar a entrada no final do arquivo "solta" — é o sintoma típico de um append automático que precisa ser realocado.
+
+Isso vale para **toda** geração de classe, não só refactor. Se a classe gerada não estiver assim, refatore antes de testar.
+
+## PDF e classificação regular/irregular
+
+- **Sempre que houver PDF disponível, baixar e salvar** (`downloadPDF` / `generatePDF`). PDF gerado fica arquivado em qualquer caso (regular ou irregular).
+- **Caminho padrão de classificação:** `processIssuance()` é onde se atribui `$this->situation`, `$this->expirationDate` e `$this->protocolNumber`, lendo o PDF/dados já capturados. Use isso como default.
+- **Exceção — `saveCertificateRegular` / `saveCertificateIrregular` dentro de um fetch:** só quando a própria resposta do site **já carrega uma mensagem que certifica a situação sem gerar PDF** (ex.: TRF4 retorna "Nenhum processo com movimentação foi localizado" no HTML antes de qualquer PDF). Nesses casos, o helper salva o conteúdo textual como "certidão" e curto-circuita. Não é o caminho padrão; é para quando o site simplesmente não entrega PDF naquele cenário.
 
 ## Como me treinar (para todos os devs)
 

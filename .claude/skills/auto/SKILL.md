@@ -161,13 +161,21 @@ Chame `pipeline_browser_capture` com `nav_steps` preenchido.
 
 Se vier `failed_step`, **use `diagnostics.visible_elements`** para descobrir o texto/label real e ajuste só aquele step na 2ª tentativa (não refaça o `nav_steps` inteiro). Limite total: 2 tentativas.
 
-**Se a 2ª tentativa também voltar com `failed_step`** (HAR incompleto), não desista — siga em frente usando o que já existe no projeto:
+**Se a 2ª tentativa também voltar com `failed_step`** (HAR incompleto), não desista — o HAR parcial pode ter valor real (cookies, CSRF, headers e payloads autênticos dos passos que rodaram). Decida pelo critério abaixo:
 
-- **MANUTENÇÃO**: a classe PHP atual já implementa o fluxo HTTP completo. Rodar `pipeline_test` com o CNPJ insere na fila do MongoDB e o artisan executa o código existente, revelando onde o portal real quebra hoje — costuma ser mais informativo que HAR parcial. Pule os PASSOS 8–10A, vá direto ao 10B usando o código atual sem alterações iniciais, analise o `artisan_output` no PASSO 11 (o ponto que falha aponta o endpoint/parâmetro que mudou) e corrija com base nesse output + `diagnostics`.
+**Aproveite o HAR parcial quando:**
 
-- **NOVA IMPLEMENTAÇÃO**: procure classes existentes que atendam URLs parecidas (mesmo domínio, mesmo sistema/fornecedor). Ex.: URL `gpi07.cloud.el.com.br` → grep por outras classes que batem em `*.cloud.el.com.br` ou herdam da mesma base. Use uma como template, adapte ao novo CNPJ/portal e rode `pipeline_test`. Só registre falha (PASSO 12) se o teste não devolver PDF/dados após até 3 tentativas no PASSO 11.
+- **NOVA IMPLEMENTAÇÃO** — sempre que houver pelo menos 1 passo capturado. Use os requests capturados como verdade absoluta pros primeiros N passos (URL, headers, payload, hidden fields), e só caia em template/classe-irmã pra montar o restante do fluxo. Chame `pipeline_extract_har` + `pipeline_interpret_flow` no HAR parcial e siga o PASSO 9A normalmente — a base_class/template preenche o tail, mas o início é real.
 
-Em ambos os casos, use `failure_reason` + `diagnostics.current_url`/`page_title` para compor a mensagem da falha quando ela for inevitável.
+- **MANUTENÇÃO**, *se* o `failed_step` estiver no meio/fim da lista (ex.: falhou no step 7 de 10 → 6 passos capturados). Aí compare request-a-request o que a classe PHP atual está mandando vs. o HAR capturado: se achar divergência nos passos cobertos (endpoint renomeado, parâmetro novo, header faltando), corrija direto no código existente sem precisar do `pipeline_test`.
+
+**Pule o HAR parcial e vá direto pro `pipeline_test` quando:**
+
+- **MANUTENÇÃO** com falha logo nos primeiros steps (ex.: falhou no step 2 de 10) — o HAR cobre pouco do fluxo e a divergência provavelmente está depois. Rode `pipeline_test` com o **código PHP atual sem alterações** (pule PASSOS 8–10A → vá direto ao 10B), e analise o `artisan_output` no PASSO 11: o ponto onde o artisan quebra aponta o endpoint/parâmetro que mudou.
+
+- **MANUTENÇÃO** com HAR quase completo (ex.: falhou no último step de 10) — o bug provavelmente está justamente no trecho que o HAR não cobriu. Mesmo caminho: `pipeline_test` com código atual + `artisan_output`.
+
+Em qualquer caso, se o `pipeline_test` falhar 3x sem dar pra corrigir, vá pro PASSO 11 (falha) usando `failure_reason` + `diagnostics.current_url`/`page_title` pra compor a mensagem.
 
 ---
 
