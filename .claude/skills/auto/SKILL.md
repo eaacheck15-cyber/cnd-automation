@@ -276,9 +276,10 @@ Motivo: {descrição humana do erro}
 Exiba: `❌ #{task_id} — {class_name} — {motivo} (reatribuído para Analista de Negócio)`
 
 Notifique o Google Chat chamando `notify_google_chat`:
-- `nome_job`: `CND Automation #{task_id} — {class_name}`
+- `task_id`: id numérico da tarefa
+- `class_name`: nome da classe (ex.: `CertificateCajati`)
 - `status`: `"ERRO"`
-- `detalhes`: `"<b>Motivo:</b> {motivo}<br/><b>Reatribuído para:</b> Analista de Negócio Web/Imobiliário"`
+- `motivo`: a mesma descrição humana do erro usada na nota do Redmine
 - `inicio`: timestamp anotado no PASSO 2
 - `duracao_segundos`: `(agora - inicio)` em segundos
 
@@ -312,9 +313,11 @@ Projetos e Arquivos Modificados:
 Exiba: `✅ #{task_id} — {class_name} — commitado e atualizado no Redmine.`
 
 Notifique o Google Chat chamando `notify_google_chat`:
-- `nome_job`: `CND Automation #{task_id} — {class_name}`
+- `task_id`: id numérico da tarefa
+- `class_name`: nome da classe (ex.: `CertificateCajati`)
 - `status`: `"SUCESSO"`
-- `detalhes`: `"<b>Tipo:</b> {NOVA IMPLEMENTAÇÃO|MANUTENÇÃO}<br/><b>Classe:</b> {class_name}<br/><b>Esfera:</b> {Federal|Estadual|Municipal} {state se houver}"`
+- `tipo`: `"NOVA IMPLEMENTAÇÃO"` ou `"MANUTENÇÃO"`
+- `esfera`: `"Federal"`, `"Estadual <UF>"` ou `"Municipal <UF>"` (ex.: `"Municipal SP"`)
 - `inicio`: timestamp anotado no PASSO 2
 - `duracao_segundos`: `(agora - inicio)` em segundos
 

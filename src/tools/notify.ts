@@ -1,13 +1,13 @@
 import { GOOGLE_CHAT_WEBHOOK_URL } from "../config.js";
 
-type Status = "SUCESSO" | "ERRO" | "AVISO" | "INICIADO";
+export type NotifyStatus = "SUCESSO" | "ERRO";
 
-const STATUS_ICON: Record<Status, string> = {
+const STATUS_ICON: Record<NotifyStatus, string> = {
   SUCESSO: "🟢",
   ERRO: "🔴",
-  AVISO: "🟡",
-  INICIADO: "🔵",
 };
+
+const DEFAULT_FAILURE_ASSIGNEE = "Analista de Negócio Web/Imobiliário";
 
 function formatBR(date: Date): string {
   const pad = (n: number) => String(n).padStart(2, "0");
@@ -24,13 +24,19 @@ function formatDuration(seconds: number): string {
   return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
 }
 
-export async function notifyGoogleChat(input: {
-  nome_job: string;
-  status: Status;
-  detalhes: string;
+export interface NotifyInput {
+  task_id: number;
+  class_name: string;
+  status: NotifyStatus;
   inicio: string;
   duracao_segundos?: number;
-}): Promise<{ sent: boolean; reason?: string }> {
+  tipo?: "NOVA IMPLEMENTAÇÃO" | "MANUTENÇÃO";
+  esfera?: string;
+  motivo?: string;
+  reatribuido_para?: string;
+}
+
+export async function notifyGoogleChat(input: NotifyInput): Promise<{ sent: boolean; reason?: string }> {
   if (!GOOGLE_CHAT_WEBHOOK_URL) {
     return { sent: false, reason: "GOOGLE_CHAT_WEBHOOK_URL not configured" };
   }
@@ -39,22 +45,27 @@ export async function notifyGoogleChat(input: {
   const inicio = new Date(input.inicio);
   const agora = new Date();
 
-  const linhas = [
-    `<b>Status:</b> ${input.status}<br/>`,
-    `<b>Início:</b> ${formatBR(inicio)}<br/>`,
-    input.duracao_segundos !== undefined
-      ? `<b>Duração:</b> ${formatDuration(input.duracao_segundos)}<br/>`
-      : "",
-    "<br/>",
-    `<b>Detalhes:</b><br/>${input.detalhes}`,
-  ];
+  const linhas: string[] = [];
+
+  if (input.status === "SUCESSO") {
+    if (input.tipo)   linhas.push(`<b>Tipo:</b> ${input.tipo}`);
+    if (input.esfera) linhas.push(`<b>Esfera:</b> ${input.esfera}`);
+  } else {
+    if (input.motivo) linhas.push(`<b>Motivo:</b> ${input.motivo}`);
+    linhas.push(`<b>Reatribuído para:</b> ${input.reatribuido_para ?? DEFAULT_FAILURE_ASSIGNEE}`);
+  }
+
+  linhas.push(`<b>Início:</b> ${formatBR(inicio)}`);
+  if (input.duracao_segundos !== undefined) {
+    linhas.push(`<b>Duração:</b> ${formatDuration(input.duracao_segundos)}`);
+  }
 
   const payload = {
     cards: [
       {
         header: {
-          title: `${icone} ${input.nome_job}`,
-          subtitle: `Enviado em ${formatBR(agora)}`,
+          title: `${icone} CND #${input.task_id} — ${input.class_name}`,
+          subtitle: formatBR(agora),
           imageStyle: "AVATAR",
         },
         sections: [
@@ -62,7 +73,7 @@ export async function notifyGoogleChat(input: {
             widgets: [
               {
                 textParagraph: {
-                  text: linhas.join(""),
+                  text: linhas.join("<br/>"),
                 },
               },
             ],

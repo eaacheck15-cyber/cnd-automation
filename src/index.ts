@@ -263,17 +263,23 @@ When the pipeline fails, also set assigned_to_id to ${REDMINE_FAILURE_ASSIGNEE_I
 
 server.tool(
   "notify_google_chat",
-  `Send a card notification to a Google Chat space via incoming webhook. Use after /auto finishes a task to report success or failure.
+  `Envia um card no Google Chat informando o resultado de uma tarefa do /auto.
 
-The webhook URL is read from GOOGLE_CHAT_WEBHOOK_URL env var; if not set, this tool returns sent=false without throwing.
+Webhook lido de GOOGLE_CHAT_WEBHOOK_URL; se vazio, retorna {sent:false} sem erro.
 
-Status values map to icons: SUCESSO 🟢, ERRO 🔴, AVISO 🟡, INICIADO 🔵.`,
+Layout do card (titulo fixo "CND #<task_id> — <class_name>"):
+- SUCESSO 🟢: mostra Tipo, Esfera, Inicio, Duracao
+- ERRO 🔴: mostra Motivo, Reatribuido para, Inicio, Duracao`,
   {
-    nome_job:         z.string().describe('Job/task title (ex.: "CND Automation #1234 — CertificateCajati")'),
-    status:           z.enum(["SUCESSO", "ERRO", "AVISO", "INICIADO"]).describe("Result status"),
-    detalhes:         z.string().describe("Free-form details (supports <b>, <br/> HTML). For failures, include the human reason."),
-    inicio:           z.string().describe("ISO 8601 timestamp when the task started (ex.: new Date().toISOString() at PASSO 2)"),
-    duracao_segundos: z.number().optional().describe("Optional duration in seconds. Computed as (now - inicio)."),
+    task_id:          z.number().describe("ID numerico da tarefa no Redmine (ex.: 2338858)"),
+    class_name:       z.string().describe("Nome da classe PHP (ex.: CertificateCajati)"),
+    status:           z.enum(["SUCESSO", "ERRO"]).describe("Resultado da tarefa"),
+    inicio:           z.string().describe("Timestamp ISO 8601 do PASSO 2 (ex.: new Date().toISOString())"),
+    duracao_segundos: z.number().optional().describe("Duracao em segundos (agora - inicio)"),
+    tipo:             z.enum(["NOVA IMPLEMENTAÇÃO", "MANUTENÇÃO"]).optional().describe("Apenas para SUCESSO — operacao realizada"),
+    esfera:           z.string().optional().describe('Apenas para SUCESSO — ex.: "Federal", "Estadual SP", "Municipal SP"'),
+    motivo:           z.string().optional().describe("Apenas para ERRO — descricao humana do motivo da falha"),
+    reatribuido_para: z.string().optional().describe('Apenas para ERRO — grupo destino (default: "Analista de Negocio Web/Imobiliario")'),
   },
   async (input) => {
     try {
