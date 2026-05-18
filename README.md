@@ -6,7 +6,7 @@ Servidor MCP que automatiza a implementação de certidões no projeto CND. Para
 
 - [Node.js](https://nodejs.org/) 20+
 - [PHP](https://www.php.net/) acessível no PATH (ou via Docker)
-- [Playwright](https://playwright.dev/) com Chromium instalado
+- [rebrowser-playwright](https://github.com/rebrowser/rebrowser-playwright) com Chromium instalado (fork stealth do Playwright; API idêntica)
 - [Claude Code](https://claude.ai/code) CLI instalado
 - Acesso ao Redmine da Questor e ao repositório CND
 
@@ -16,7 +16,7 @@ Servidor MCP que automatiza a implementação de certidões no projeto CND. Para
 git clone https://github.com/MatheusRosaQuestor/cnd-automation.git
 cd cnd-automation
 npm install
-npx playwright install chromium
+npx rebrowser-playwright install chromium
 npm run build
 ```
 
@@ -41,11 +41,10 @@ Crie o arquivo `.claude/settings.json` com as variáveis de ambiente do servidor
       "mcp__cnd-pipeline__pipeline_generate_code",
       "mcp__cnd-pipeline__pipeline_test",
       "mcp__cnd-pipeline__pipeline_commit",
-      "mcp__cnd-pipeline__pipeline_run",
-      "mcp__cnd-pipeline__pipeline_get_state",
       "mcp__cnd-pipeline__redmine_next_task",
       "mcp__cnd-pipeline__redmine_get_tasks",
       "mcp__cnd-pipeline__redmine_update_task",
+      "mcp__cnd-pipeline__notify_google_chat",
       "Bash(Test-Path:*)",
       "Bash(docker ps:*)",
       "Bash(Get-ChildItem:*)",
@@ -80,8 +79,11 @@ Crie o arquivo `.claude/settings.json` com as variáveis de ambiente do servidor
         "REDMINE_URL": "https://redmine.questor.com.br",
         "REDMINE_API_KEY": "SUA_API_KEY_AQUI",
         "REDMINE_PROJECT_ID": "1106",
+        "REDMINE_ASSIGNED_TO_ID": "1062",
+        "REDMINE_FAILURE_ASSIGNEE_ID": "875",
         "DOCKER_CONTAINER": "",
-        "DOCKER_WORKING_DIR": "/var/www/html"
+        "DOCKER_WORKING_DIR": "/var/www/html",
+        "GOOGLE_CHAT_WEBHOOK_URL": ""
       }
     }
   }
@@ -89,6 +91,10 @@ Crie o arquivo `.claude/settings.json` com as variáveis de ambiente do servidor
 ```
 
 > **DOCKER_CONTAINER**: se o PHP rodar dentro de um container Docker, informe o nome do container (ex: `configs-development-app-1`). Deixe vazio para usar o PHP do host.
+
+> **REDMINE_ASSIGNED_TO_ID** = `1062` (grupo "Questor Sistemas - Desenvolvimento Web") é a origem das tarefas processadas. **REDMINE_FAILURE_ASSIGNEE_ID** = `875` (grupo "Questor Sistemas - Analista de Negocio Web/Imobiliário") é o destino quando o `/auto` não consegue resolver — a tarefa é reatribuída automaticamente para análise manual.
+
+> **GOOGLE_CHAT_WEBHOOK_URL**: webhook do Google Chat para notificações de sucesso/falha por tarefa. Gerar em **Configurações do Space → Apps e integrações → Adicionar webhooks** e colar a URL completa (contém token, tratar como senha). Se vazio, as notificações são silenciosamente puladas.
 
 > **permissions**: libera as MCP tools do pipeline e os comandos Bash usados pela skill `/auto` sem prompts. Substitua `C:\\caminho\\para\\cnd` pelo caminho real onde o repo CND foi clonado (precisa bater com `GIT_WORKING_DIR` e aparecer também em `additionalDirectories` pra permitir Read/Edit fora do workspace).
 
@@ -105,15 +111,40 @@ O `pipeline_browser_capture` carrega a extensão [CapMonster](https://capmonster
 
 ## Uso
 
-### Modo autônomo (recomendado)
+### Modo autônomo (agendado)
 
-Abre o Claude Code na pasta do projeto e executa:
+O `/auto` é disparado diariamente às **07:00** pelo Task Scheduler do Windows. Cada execução processa no máximo `MAX_TAREFAS` tarefas (default `5`, definido em [.claude/skills/auto/SKILL.md](.claude/skills/auto/SKILL.md)) e então encerra.
 
+**Instalar o agendamento (rodar UMA vez por máquina):**
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\install-scheduled-task.ps1
 ```
-/loop /auto
+
+Isso cria a tarefa **"CND Auto Daily"** no Task Scheduler do seu usuário (não precisa Administrador). O script imprime o próximo horário de disparo ao final. A tarefa chama [scripts/auto-daily.ps1](scripts/auto-daily.ps1), que executa `claude -p "/auto"` na pasta do projeto e loga em `logs/auto-daily-YYYY-MM-DD.log`.
+
+**Conferir / desinstalar:**
+
+```powershell
+# ver status e proximo disparo
+Get-ScheduledTask -TaskName "CND Auto Daily" | Get-ScheduledTaskInfo
+
+# disparar manualmente para testar
+Start-ScheduledTask -TaskName "CND Auto Daily"
+
+# remover
+Unregister-ScheduledTask -TaskName "CND Auto Daily" -Confirm:$false
 ```
 
-O agente busca tarefas no Redmine, processa cada uma pelo pipeline completo e commita automaticamente. A fila de tarefas é atualizada uma vez por dia de forma automática.
+**Resetar o contador de tarefas processadas** (`MAX_TAREFAS`):
+
+```powershell
+Remove-Item .claude\auto_count
+```
+
+**Observações:**
+- A task roda como usuário interativo. Se a máquina estiver desligada ou o usuário deslogado às 7h, ela dispara assim que possível (graças a `-StartWhenAvailable`).
+- Confirme que o seu CLI do Claude Code aceita os flags usados em `auto-daily.ps1` (`-p "/auto" --permission-mode acceptEdits`). Ajuste se a sua versão usar nomes diferentes.
 
 ### Pausar o pipeline
 
@@ -150,7 +181,8 @@ use redmine_get_tasks to fetch open tasks, then run pipeline for task #1234
 | `pipeline_generate_code` | Coleta contexto e exemplos para geração da classe PHP |
 | `pipeline_test` | Escreve o arquivo, atualiza o config e roda `php artisan issue` |
 | `pipeline_commit` | Faz o commit do arquivo gerado e do config atualizado |
-| `pipeline_get_state` | Retorna o estado atual do pipeline de uma tarefa |
+| `redmine_update_task` | Atualiza status, responsável e adiciona nota numa tarefa do Redmine |
+| `notify_google_chat` | Envia card de sucesso/falha para um Google Chat Space via webhook (`GOOGLE_CHAT_WEBHOOK_URL`) |
 
 ## Desenvolvimento
 

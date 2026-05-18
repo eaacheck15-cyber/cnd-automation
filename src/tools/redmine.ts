@@ -7,7 +7,6 @@ import {
   REDMINE_ASSIGNED_TO_ID,
   REDMINE_ASSIGNED_TO_NAME,
   TASK_QUEUE_PATH,
-  STATE_DIR,
 } from "../config.js";
 
 function filterByAssignee(issues: RedmineIssue[]): RedmineIssue[] {
@@ -20,10 +19,12 @@ export async function updateRedmineIssue(input: {
   issue_id: number;
   status_id?: string;
   notes?: string;
+  assigned_to_id?: string;
 }): Promise<void> {
   const body: Record<string, unknown> = {};
   if (input.status_id) body.status_id = Number(input.status_id);
   if (input.notes) body.notes = input.notes;
+  if (input.assigned_to_id) body.assigned_to_id = Number(input.assigned_to_id);
 
   const response = await fetch(`${REDMINE_URL}/issues/${input.issue_id}.json`, {
     method: "PUT",
@@ -169,19 +170,9 @@ export async function getNextTask(): Promise<{
     return { task: null, remaining: 0, cursor: 0, fetched_at: queue.fetched_at, auto_refreshed };
   }
 
-  // Skip tasks that were already attempted (state file exists)
-  while (queue.cursor < queue.tasks.length) {
-    const candidate = queue.tasks[queue.cursor];
-    queue.cursor += 1;
-
-    const stateFile = path.join(STATE_DIR, `${candidate.id}.json`);
-    if (fs.existsSync(stateFile)) continue;
-
-    saveQueue(queue);
-    const remaining = queue.tasks.length - queue.cursor;
-    return { task: candidate, remaining, cursor: queue.cursor, fetched_at: queue.fetched_at, auto_refreshed };
-  }
-
+  const candidate = queue.tasks[queue.cursor];
+  queue.cursor += 1;
   saveQueue(queue);
-  return { task: null, remaining: 0, cursor: queue.cursor, fetched_at: queue.fetched_at, auto_refreshed };
+  const remaining = queue.tasks.length - queue.cursor;
+  return { task: candidate, remaining, cursor: queue.cursor, fetched_at: queue.fetched_at, auto_refreshed };
 }

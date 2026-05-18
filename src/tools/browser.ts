@@ -1,5 +1,5 @@
-import { chromium, type BrowserContext, type Frame, type Page } from "playwright";
-import { mkdir, writeFile, stat } from "fs/promises";
+import { chromium, type BrowserContext, type Frame, type Page } from "rebrowser-playwright";
+import { mkdir, writeFile, stat, readFile, unlink } from "fs/promises";
 import path from "path";
 import { fileURLToPath } from "url";
 import { HAR_DIR, BROWSER_HEADLESS } from "../config.js";
@@ -101,7 +101,7 @@ async function fillWithDelay(target: FillTarget, selector: string, value: string
   }
 }
 
-async function typeIntoLocator(target: Page, locator: import("playwright").Locator, value: string, delay = 80) {
+async function typeIntoLocator(target: Page, locator: import("rebrowser-playwright").Locator, value: string, delay = 80) {
   await locator.click();
   await locator.fill('');
   for (const char of value) {
@@ -355,6 +355,7 @@ export async function browserCapture(input: BrowserCaptureInput): Promise<Browse
       '--ignore-certificate-errors',
       '--disable-web-security',
       '--disable-gpu',
+      '--disable-gpu-sandbox',
       '--disable-infobars',
       '--lang=pt-BR',
     ],
@@ -387,20 +388,35 @@ export async function browserCapture(input: BrowserCaptureInput): Promise<Browse
   let pdfFromResponse: Buffer | null = null;
   let pdfSavedFromDownload = false;
 
+  // PDF magic bytes: every valid PDF starts with "%PDF-" (0x25 0x50 0x44 0x46 0x2D).
+  // We check content-type as a fast filter, then confirm via magic bytes to reject
+  // false positives like application/octet-stream serving fonts, images, JS chunks etc.
+  const isPdfBuffer = (buf: Buffer): boolean =>
+    buf.length >= 5 &&
+    buf[0] === 0x25 && buf[1] === 0x50 && buf[2] === 0x44 && buf[3] === 0x46 && buf[4] === 0x2D;
+
   const attachPdfHooks = (target: Page) => {
     target.on('response', async (response) => {
       try {
         const ct = (response.headers()['content-type'] ?? '').toLowerCase();
-        if (response.status() === 200 && (ct.includes('pdf') || ct.includes('octet-stream'))) {
+        const looksLikePdfCT = ct.includes('pdf') || ct.includes('octet-stream');
+        if (response.status() === 200 && looksLikePdfCT) {
           const buf = await response.body();
-          if (buf && buf.length > 0) pdfFromResponse = buf;
+          if (buf && buf.length > 0 && isPdfBuffer(buf)) pdfFromResponse = buf;
         }
       } catch { /* response stream may already be consumed */ }
     });
     target.on('download', async (dl) => {
       try {
         await dl.saveAs(pdf_path);
-        pdfSavedFromDownload = true;
+        // Validate the downloaded file's magic bytes before confirming.
+        const head = await readFile(pdf_path).then((b) => b.subarray(0, 5)).catch(() => null);
+        if (head && isPdfBuffer(head as Buffer)) {
+          pdfSavedFromDownload = true;
+        } else {
+          // Not a real PDF — remove to avoid misleading downstream consumers.
+          await unlink(pdf_path).catch(() => { /* ignore */ });
+        }
       } catch { /* best-effort */ }
     });
   };

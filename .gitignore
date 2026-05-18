@@ -8,3 +8,6 @@ browser-profile/
 .claude/settings.json
 .claude/settings.local.json
 STOP
+logs/
+.claude/scheduled_tasks.lock
+.claude/auto_count

@@ -1,7 +1,10 @@
 import { config } from "dotenv";
 import path from "path";
+import { fileURLToPath } from "url";
 
-config();
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+config({ path: path.join(__dirname, "..", ".env"), override: true });
 
 function required(name: string): string {
   const value = process.env[name];
@@ -32,9 +35,14 @@ export const REDMINE_API_KEY = required("REDMINE_API_KEY");
 export const REDMINE_PROJECT_ID = optional("REDMINE_PROJECT_ID", "1106");
 export const REDMINE_ASSIGNED_TO_NAME = optional(
   "REDMINE_ASSIGNED_TO_NAME",
-  "Questor Sistemas - Analista de Negocio Web/Imobiliário"
+  "Questor Sistemas - Desenvolvimento Web"
 );
 export const REDMINE_ASSIGNED_TO_ID = optional("REDMINE_ASSIGNED_TO_ID", "");
+// Grupo destino quando o /auto falha (Analista de Negocio Web/Imobiliario).
+export const REDMINE_FAILURE_ASSIGNEE_ID = optional("REDMINE_FAILURE_ASSIGNEE_ID", "");
+
+// Webhook do Google Chat para notificacoes do /auto (sucesso/falha).
+export const GOOGLE_CHAT_WEBHOOK_URL = optional("GOOGLE_CHAT_WEBHOOK_URL", "");
 export const REDMINE_STATUS_EM_DESENV = optional("REDMINE_STATUS_EM_DESENV", "57");
 export const REDMINE_STATUS_AG_REVIEW = optional("REDMINE_STATUS_AG_REVIEW", "84");
 export const REDMINE_STATUS_AG_DESENV = optional("REDMINE_STATUS_AG_DESENV", "56");
@@ -49,6 +57,5 @@ export const BLOCKS_MEMORY_PATH = path.join(
   "CND_BLOCKS_MEMORY.json"
 );
 
-export const STATE_DIR = path.join(WORK_DIR, "state");
 export const HAR_DIR = path.join(WORK_DIR, "har");
 export const TASK_QUEUE_PATH = path.join(WORK_DIR, "state", "task_queue.json");

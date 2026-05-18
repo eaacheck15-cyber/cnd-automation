@@ -2,8 +2,6 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
 
-import { StateManager } from "./state/StateManager.js";
-import { runPipeline } from "./tools/pipeline.js";
 import { discover } from "./tools/discover.js";
 import { browserCapture } from "./tools/browser.js";
 import { extractHar } from "./tools/extract.js";
@@ -12,9 +10,8 @@ import { generateCode } from "./tools/generate.js";
 import { testCertificate } from "./tools/test.js";
 import { commitResult } from "./tools/commit.js";
 import { getRedmineTasks, getNextTask, updateRedmineIssue } from "./tools/redmine.js";
-import { REDMINE_STATUS_EM_DESENV, REDMINE_STATUS_AG_REVIEW, REDMINE_STATUS_AG_DESENV } from "./config.js";
-
-const stateManager = new StateManager();
+import { notifyGoogleChat } from "./tools/notify.js";
+import { REDMINE_STATUS_EM_DESENV, REDMINE_STATUS_AG_REVIEW, REDMINE_STATUS_AG_DESENV, REDMINE_FAILURE_ASSIGNEE_ID } from "./config.js";
 
 const server = new McpServer({
   name: "mcp-cnd-pipeline",
@@ -34,29 +31,7 @@ const FlowStepSchema = z.object({
   status:     z.number().nullable(),
 });
 
-// ─── Tool 1: pipeline_run ────────────────────────────────────────────────────
-
-server.tool(
-  "pipeline_run",
-  "Execute the full automation pipeline: DISCOVERY → BROWSER → EXTRACTION → INTERPRETATION → GENERATION → TEST → DECISION. Persists state and retries up to 3 times on failure.",
-  {
-    task_id: z.string().describe("Redmine task ID or any unique identifier"),
-    task_description: z.string().describe("Full task description — URL, certificate type, system details"),
-    class_name: z.string().describe("PHP class name to generate (e.g. CertificateFrancoDaRocha)"),
-    type: CertificateTypeSchema.describe("Certificate type: Federal, State or Municipal"),
-    state: z.string().optional().describe("State abbreviation (required for State and Municipal)"),
-  },
-  async (input) => {
-    try {
-      const result = await runPipeline(input);
-      return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
-    } catch (err) {
-      return { content: [{ type: "text", text: `Error: ${(err as Error).message}` }], isError: true };
-    }
-  }
-);
-
-// ─── Tool 2: pipeline_discover ───────────────────────────────────────────────
+// ─── Tool: pipeline_discover ─────────────────────────────────────────────────
 
 server.tool(
   "pipeline_discover",
@@ -220,26 +195,7 @@ server.tool(
   }
 );
 
-// ─── Tool 9: pipeline_get_state ──────────────────────────────────────────────
-
-server.tool(
-  "pipeline_get_state",
-  "Return the current pipeline state for a task. Without task_id returns the most recently updated state.",
-  {
-    task_id: z.string().optional().describe("Task ID to retrieve. Omit to get the latest."),
-  },
-  async ({ task_id }) => {
-    const state = task_id
-      ? stateManager.load(task_id)
-      : stateManager.getLatest();
-    if (!state) {
-      return { content: [{ type: "text", text: "No state found." }] };
-    }
-    return { content: [{ type: "text", text: JSON.stringify(state, null, 2) }] };
-  }
-);
-
-// ─── Tool 10: redmine_get_tasks ───────────────────────────────────────────────
+// ─── Tool: redmine_get_tasks ─────────────────────────────────────────────────
 
 server.tool(
   "redmine_get_tasks",
@@ -281,19 +237,48 @@ server.tool(
 
 server.tool(
   "redmine_update_task",
-  `Update a Redmine issue status and/or add a journal note. Use the predefined status constants:
+  `Update a Redmine issue status, reassign it, and/or add a journal note. Use the predefined status constants:
 - Em Desenvolvimento (${REDMINE_STATUS_EM_DESENV}): when starting work on a task
 - Ag. Review (${REDMINE_STATUS_AG_REVIEW}): when pipeline succeeds
-- Ag. Desenv. (${REDMINE_STATUS_AG_DESENV}): when pipeline fails`,
+- Ag. Desenv. (${REDMINE_STATUS_AG_DESENV}): when pipeline fails
+
+When the pipeline fails, also set assigned_to_id to ${REDMINE_FAILURE_ASSIGNEE_ID || "<REDMINE_FAILURE_ASSIGNEE_ID not configured>"} (Analista de Negocio Web/Imobiliario).`,
   {
     issue_id: z.number().describe("Redmine issue ID"),
     status_id: z.string().optional().describe(`Status ID to set. Use: ${REDMINE_STATUS_EM_DESENV} (Em Desenv.), ${REDMINE_STATUS_AG_REVIEW} (Ag. Review), ${REDMINE_STATUS_AG_DESENV} (Ag. Desenv.)`),
     notes: z.string().optional().describe("Journal note to add to the issue history"),
+    assigned_to_id: z.string().optional().describe(`Numeric ID of the user/group to assign the issue to. Use ${REDMINE_FAILURE_ASSIGNEE_ID || "REDMINE_FAILURE_ASSIGNEE_ID"} when the pipeline fails (Analista de Negocio Web/Imobiliario).`),
   },
   async (input) => {
     try {
       await updateRedmineIssue(input);
       return { content: [{ type: "text", text: "Issue updated successfully." }] };
+    } catch (err) {
+      return { content: [{ type: "text", text: `Error: ${(err as Error).message}` }], isError: true };
+    }
+  }
+);
+
+// ─── Tool 13: notify_google_chat ─────────────────────────────────────────────
+
+server.tool(
+  "notify_google_chat",
+  `Send a card notification to a Google Chat space via incoming webhook. Use after /auto finishes a task to report success or failure.
+
+The webhook URL is read from GOOGLE_CHAT_WEBHOOK_URL env var; if not set, this tool returns sent=false without throwing.
+
+Status values map to icons: SUCESSO 🟢, ERRO 🔴, AVISO 🟡, INICIADO 🔵.`,
+  {
+    nome_job:         z.string().describe('Job/task title (ex.: "CND Automation #1234 — CertificateCajati")'),
+    status:           z.enum(["SUCESSO", "ERRO", "AVISO", "INICIADO"]).describe("Result status"),
+    detalhes:         z.string().describe("Free-form details (supports <b>, <br/> HTML). For failures, include the human reason."),
+    inicio:           z.string().describe("ISO 8601 timestamp when the task started (ex.: new Date().toISOString() at PASSO 2)"),
+    duracao_segundos: z.number().optional().describe("Optional duration in seconds. Computed as (now - inicio)."),
+  },
+  async (input) => {
+    try {
+      const result = await notifyGoogleChat(input);
+      return { content: [{ type: "text", text: JSON.stringify(result) }] };
     } catch (err) {
       return { content: [{ type: "text", text: `Error: ${(err as Error).message}` }], isError: true };
     }

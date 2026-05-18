@@ -1,11 +1,20 @@
 ---
-description: Executa o pipeline CND de forma totalmente autônoma — busca tarefas no Redmine, processa cada uma pelo pipeline completo e commita. Use com /loop para rodar continuamente sem intervenção.
+description: Executa o pipeline CND de forma totalmente autônoma — busca tarefas no Redmine, processa cada uma pelo pipeline completo e commita. Agendado via Task Scheduler do Windows (ver scripts/install-scheduled-task.ps1) para rodar todos os dias às 7h.
 allowed-tools: Bash(*), Read, Write, Edit, Glob, Grep, WebFetch, mcp__cnd-pipeline__*
 ---
 
 ## Pipeline CND — Modo Autônomo
 
 Você está operando em modo autônomo. Execute cada passo na ordem abaixo, sem pedir confirmação.
+
+---
+
+### Configuração
+
+- **`MAX_TAREFAS = 5`** — limite de tarefas processadas por execução agendada. Para alterar, edite só este valor.
+- Contador persistido em `c:\Workspace\cnd-automation\.claude\auto_count` (texto puro, um inteiro).
+- O contador **incrementa apenas em sucesso (PASSO 12)** ou **falha registrada no Redmine (PASSO 11)**. Encerramentos por pausa/fila vazia/erro de ambiente não contam.
+- Para resetar o ciclo: `Remove-Item c:\Workspace\cnd-automation\.claude\auto_count`.
 
 ---
 
@@ -21,7 +30,7 @@ Como garantir antes de qualquer `pipeline_test`:
 
 ---
 
-### PASSO 1 — Verificar pausa
+### PASSO 1 — Verificar pausa e limite
 
 Verifique se o arquivo `c:\Workspace\cnd-automation\STOP` existe:
 ```powershell
@@ -29,6 +38,14 @@ Test-Path c:\Workspace\cnd-automation\STOP
 ```
 - **True** → exiba "⏸ Pipeline pausado. Delete o arquivo STOP para retomar." e **encerre o ciclo**.
 - **False** → continue.
+
+Verifique o contador de tarefas processadas contra `MAX_TAREFAS` (ver Configuração):
+```powershell
+$count = if (Test-Path c:\Workspace\cnd-automation\.claude\auto_count) { [int](Get-Content c:\Workspace\cnd-automation\.claude\auto_count) } else { 0 }
+$count
+```
+- Se `count >= MAX_TAREFAS` → exiba "🏁 Limite de {MAX_TAREFAS} tarefas atingido. Delete `.claude/auto_count` para reiniciar." e **encerre o ciclo**.
+- Caso contrário, continue.
 
 ---
 
@@ -38,7 +55,7 @@ Chame `redmine_next_task`.
 
 - `task: null` → "📭 Fila vazia." e **encerre o ciclo**.
 - `auto_refreshed: true` → informe quantas tarefas foram carregadas.
-- Tarefa retornada → anote `id`, `subject` e `description` e continue.
+- Tarefa retornada → anote `id`, `subject`, `description` e o **`inicio`** (timestamp ISO atual, ex.: gerado via `Get-Date -Format "o"` em PowerShell ou `new Date().toISOString()`). Esse `inicio` é usado na notificação do Google Chat nos PASSOS 11/12.
 
 ---
 
@@ -148,7 +165,7 @@ Monte `nav_steps` seguindo as `instrucoes` da tarefa: cada linha da seção "Ins
 
 **Output relevante:**
 - `har_path` — sempre presente, mesmo em falha (steps que rodaram já estão capturados)
-- `pdf_path` — preenchido quando o portal devolveu PDF. Útil para validar que o fluxo terminou.
+- `pdf_path` — **só vem preenchido quando o portal entregou um PDF de verdade no fluxo** (magic bytes `%PDF-` validados; fontes/binários servidos como `octet-stream` não passam). Como o PDF da certidão sai depois do último step, presença de `pdf_path` ≈ "fluxo completou com sucesso". Ausência mesmo com `failed_step` no final = a certidão não foi emitida ainda, o último click não chegou no PDF.
 - `popup_pages` — número de popups detectados (use isso para confirmar que `page_index` foi necessário)
 - `failed_step` — índice do step que falhou (auto-retry interno já tentou 2x antes de marcar como falha)
 - `failure_reason` — mensagem do erro do Playwright
@@ -165,7 +182,7 @@ Se vier `failed_step`, **use `diagnostics.visible_elements`** para descobrir o t
 
 **Aproveite o HAR parcial quando:**
 
-- **NOVA IMPLEMENTAÇÃO** — sempre que houver pelo menos 1 passo capturado. Use os requests capturados como verdade absoluta pros primeiros N passos (URL, headers, payload, hidden fields), e só caia em template/classe-irmã pra montar o restante do fluxo. Chame `pipeline_extract_har` + `pipeline_interpret_flow` no HAR parcial e siga o PASSO 9A normalmente — a base_class/template preenche o tail, mas o início é real.
+- **NOVA IMPLEMENTAÇÃO** — sempre que houver pelo menos 1 passo capturado. Use os requests capturados como verdade absoluta pros primeiros N passos (URL, headers, payload, hidden fields), e só caia em template/classe-irmã pra montar o restante do fluxo. Chame `pipeline_extract_har` + `pipeline_interpret_flow` no HAR parcial e siga o PASSO 9A normalmente — a base_class/template preenche o tail, mas o início é real. O `pdf_path` no output é um sinal de **confiança** sobre o quão completo está o HAR (com PDF = HAR provavelmente cobriu tudo; sem PDF = tail vai depender mais do template), mas não decide nada sozinho — a falha real só é constatada no `pipeline_test` (PASSO 10).
 
 - **MANUTENÇÃO**, *se* o `failed_step` estiver no meio/fim da lista (ex.: falhou no step 7 de 10 → 6 passos capturados). Aí compare request-a-request o que a classe PHP atual está mandando vs. o HAR capturado: se achar divergência nos passos cobertos (endpoint renomeado, parâmetro novo, header faltando), corrija direto no código existente sem precisar do `pipeline_test`.
 
@@ -248,6 +265,7 @@ Traduza o erro para uma descrição objetiva e humana. Exemplos:
 Chame `redmine_update_task`:
 - `issue_id`: id da tarefa
 - `status_id`: `"56"` (Ag. Desenv.)
+- `assigned_to_id`: ID do grupo **"Questor Sistemas - Analista de Negocio Web/Imobiliário"** (valor de `REDMINE_FAILURE_ASSIGNEE_ID` no `.env` / `.claude/settings.json`). Reatribui a tarefa pra esse grupo para que um analista avalie manualmente.
 - `notes`:
 ```
 Tentativa de resolução automática pela CND Automation — não foi possível concluir.
@@ -255,7 +273,19 @@ Tentativa de resolução automática pela CND Automation — não foi possível 
 Motivo: {descrição humana do erro}
 ```
 
-Exiba: `❌ #{task_id} — {class_name} — {motivo}`
+Exiba: `❌ #{task_id} — {class_name} — {motivo} (reatribuído para Analista de Negócio)`
+
+Notifique o Google Chat chamando `notify_google_chat`:
+- `nome_job`: `CND Automation #{task_id} — {class_name}`
+- `status`: `"ERRO"`
+- `detalhes`: `"<b>Motivo:</b> {motivo}<br/><b>Reatribuído para:</b> Analista de Negócio Web/Imobiliário"`
+- `inicio`: timestamp anotado no PASSO 2
+- `duracao_segundos`: `(agora - inicio)` em segundos
+
+Incremente o contador:
+```powershell
+$p = "c:\Workspace\cnd-automation\.claude\auto_count"; $n = if (Test-Path $p) { [int](Get-Content $p) } else { 0 }; ($n + 1) | Out-File $p -Encoding utf8
+```
 
 **Encerre o ciclo.**
 
@@ -280,6 +310,18 @@ Projetos e Arquivos Modificados:
 ```
 
 Exiba: `✅ #{task_id} — {class_name} — commitado e atualizado no Redmine.`
+
+Notifique o Google Chat chamando `notify_google_chat`:
+- `nome_job`: `CND Automation #{task_id} — {class_name}`
+- `status`: `"SUCESSO"`
+- `detalhes`: `"<b>Tipo:</b> {NOVA IMPLEMENTAÇÃO|MANUTENÇÃO}<br/><b>Classe:</b> {class_name}<br/><b>Esfera:</b> {Federal|Estadual|Municipal} {state se houver}"`
+- `inicio`: timestamp anotado no PASSO 2
+- `duracao_segundos`: `(agora - inicio)` em segundos
+
+Incremente o contador:
+```powershell
+$p = "c:\Workspace\cnd-automation\.claude\auto_count"; $n = if (Test-Path $p) { [int](Get-Content $p) } else { 0 }; ($n + 1) | Out-File $p -Encoding utf8
+```
 
 ---
 

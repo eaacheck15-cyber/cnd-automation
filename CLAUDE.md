@@ -44,7 +44,7 @@ Sem prosa adicional, sem detalhes técnicos de fluxo/teste — esse formato curt
 
 ## Pipeline — sempre usar as tools `pipeline_*`
 
-Não rodar `php artisan` direto nem invocar steps manualmente. Use `mcp__cnd-pipeline__pipeline_*` (discover, browser_capture, extract_har, interpret_flow, generate_code, test, commit, run, get_state).
+Não rodar `php artisan` direto nem invocar steps manualmente. Use `mcp__cnd-pipeline__pipeline_*` (discover, browser_capture, extract_har, interpret_flow, generate_code, test, commit).
 
 Ao passar CNPJ/CPF para `pipeline_test` (parâmetro `cnpj`), sempre **só dígitos**, sem pontos, barras ou hífens. O insert em `listaespera` espera o valor cru.
 
