@@ -47,8 +47,9 @@ export async function notifyGoogleChat(input: NotifyInput): Promise<{ sent: bool
 
   const linhas: string[] = [];
 
+  if (input.tipo) linhas.push(`<b>Tipo:</b> ${input.tipo}`);
+
   if (input.status === "SUCESSO") {
-    if (input.tipo)   linhas.push(`<b>Tipo:</b> ${input.tipo}`);
     if (input.esfera) linhas.push(`<b>Esfera:</b> ${input.esfera}`);
   } else {
     if (input.motivo) linhas.push(`<b>Motivo:</b> ${input.motivo}`);

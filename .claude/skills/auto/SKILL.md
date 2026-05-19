@@ -24,9 +24,9 @@ O projeto `C:\Workspace\cnd` é Laravel 6 e **só roda em PHP 7.4**. PHP 8+ no h
 
 Como garantir antes de qualquer `pipeline_test`:
 
-1. Confira que `C:\Users\Matheus.Rosa\.claude.json` (config global do Claude Code — não há `.mcp.json` no projeto) tem `DOCKER_CONTAINER=configs-development-app-1` e `DOCKER_WORKING_DIR=/var/www/html` no bloco `env` do servidor `cnd-pipeline`.
+1. Confira que `DOCKER_CONTAINER=configs-development-app-1` e `DOCKER_WORKING_DIR=/var/www/html` estão definidos — o servidor MCP lê primeiro do `.env` do projeto e, em alternativa, do bloco `env` em `.claude/settings.json` do usuário.
 2. Confira que o container está de pé: `docker ps --filter name=configs-development-app-1 --format "{{.Names}}"`.
-3. Se o `artisan_output` voltar com paths Windows (`C:\Workspace\cnd\vendor\...`) ou erros de `ArrayAccess`/`ReflectionParameter::getClass`, é sinal de que o MCP server está usando o PHP do host — **peça ao usuário para reiniciar o MCP `cnd-pipeline`** (env só é lida no spawn do processo) e só então retome. Não tente "consertar" o helpers.php nem propor downgrade do PHP do host, esses caminhos já foram descartados.
+3. Se o `artisan_output` voltar com paths do host (`C:\...\vendor\...` ou `/usr/local/...`) ou erros de `ArrayAccess`/`ReflectionParameter::getClass`, é sinal de que o MCP server está usando o PHP do host — **peça ao usuário para reiniciar o MCP `cnd-pipeline`** (env só é lida no spawn do processo) e só então retome. Não tente "consertar" o helpers.php nem propor downgrade do PHP do host, esses caminhos já foram descartados.
 
 ---
 
@@ -279,6 +279,7 @@ Notifique o Google Chat chamando `notify_google_chat`:
 - `task_id`: id numérico da tarefa
 - `class_name`: nome da classe (ex.: `CertificateCajati`)
 - `status`: `"ERRO"`
+- `tipo`: `"NOVA IMPLEMENTAÇÃO"` ou `"MANUTENÇÃO"` (mesma classificação do PASSO 3)
 - `motivo`: a mesma descrição humana do erro usada na nota do Redmine
 - `inicio`: timestamp anotado no PASSO 2
 - `duracao_segundos`: `(agora - inicio)` em segundos

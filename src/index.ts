@@ -268,15 +268,15 @@ server.tool(
 Webhook lido de GOOGLE_CHAT_WEBHOOK_URL; se vazio, retorna {sent:false} sem erro.
 
 Layout do card (titulo fixo "CND #<task_id> — <class_name>"):
-- SUCESSO 🟢: mostra Tipo, Esfera, Inicio, Duracao
-- ERRO 🔴: mostra Motivo, Reatribuido para, Inicio, Duracao`,
+- SUCESSO 🟢: Tipo, Esfera, Inicio, Duracao
+- ERRO 🔴: Tipo, Motivo, Reatribuido para, Inicio, Duracao`,
   {
     task_id:          z.number().describe("ID numerico da tarefa no Redmine (ex.: 2338858)"),
     class_name:       z.string().describe("Nome da classe PHP (ex.: CertificateCajati)"),
     status:           z.enum(["SUCESSO", "ERRO"]).describe("Resultado da tarefa"),
     inicio:           z.string().describe("Timestamp ISO 8601 do PASSO 2 (ex.: new Date().toISOString())"),
     duracao_segundos: z.number().optional().describe("Duracao em segundos (agora - inicio)"),
-    tipo:             z.enum(["NOVA IMPLEMENTAÇÃO", "MANUTENÇÃO"]).optional().describe("Apenas para SUCESSO — operacao realizada"),
+    tipo:             z.enum(["NOVA IMPLEMENTAÇÃO", "MANUTENÇÃO"]).optional().describe("Operacao realizada — mostrado em sucesso e falha"),
     esfera:           z.string().optional().describe('Apenas para SUCESSO — ex.: "Federal", "Estadual SP", "Municipal SP"'),
     motivo:           z.string().optional().describe("Apenas para ERRO — descricao humana do motivo da falha"),
     reatribuido_para: z.string().optional().describe('Apenas para ERRO — grupo destino (default: "Analista de Negocio Web/Imobiliario")'),

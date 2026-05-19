@@ -28,7 +28,33 @@ git clone git@gitlab.questor.com.br:timeweb/cnd.git C:\Workspace\cnd
 
 ## Configuração
 
-Crie o arquivo `.claude/settings.json` com as variáveis de ambiente do servidor MCP (não commite este arquivo — ele já está no `.gitignore`):
+São dois arquivos:
+
+| Arquivo | O quê | Versionado? |
+|---|---|---|
+| [`.mcp.json`](.mcp.json) | Spawn do servidor MCP (`node ./dist/index.js`). Já vem pronto no projeto. | Sim |
+| `.env` | Variáveis de ambiente do MCP server (paths, API keys, webhooks). Copie de `.env.example`. | **Não** (gitignored) |
+| `.claude/settings.json` | Permissões do Claude Code para evitar prompts em cada tool. Opcional, mas recomendado. | **Não** (gitignored) |
+
+### 1. `.env`
+
+```powershell
+cp .env.example .env
+```
+
+Edite preenchendo:
+- `GIT_WORKING_DIR` — caminho absoluto onde o repo CND foi clonado (ex.: `C:\Workspace\cnd`)
+- `WORK_DIR` — caminho absoluto pro diretório de trabalho do MCP (ex.: `C:\Workspace\cnd-automation\work`)
+- `REDMINE_API_KEY` — pegue em https://redmine.questor.com.br → Minha conta → chave de acesso à API
+- `GOOGLE_CHAT_WEBHOOK_URL` — gerar em **Configurações do Space → Apps e integrações → Adicionar webhooks**, colar a URL inteira (contém token, tratar como senha)
+
+> **DOCKER_CONTAINER é obrigatório.** O CND é Laravel 6 / PHP 7.4 e o host normalmente tem PHP 8+. Sem o container, `pipeline_test` crasha no boot do Artisan. Default no `.env.example`: `configs-development-app-1`.
+
+> `REDMINE_ASSIGNED_TO_ID=1062` (grupo "Desenvolvimento Web") = origem das tarefas. `REDMINE_FAILURE_ASSIGNEE_ID=875` (grupo "Analista de Negocio Web/Imobiliario") = destino quando o `/auto` falha — a tarefa é reatribuída automaticamente.
+
+### 2. `.claude/settings.json` (recomendado)
+
+Sem esse arquivo, o Claude Code prompta a cada uso de tool. Crie pra liberar de uma vez:
 
 ```json
 {
@@ -49,54 +75,19 @@ Crie o arquivo `.claude/settings.json` com as variáveis de ambiente do servidor
       "Bash(docker ps:*)",
       "Bash(Get-ChildItem:*)",
       "Bash(Get-Content:*)",
-      "Bash(git -C C:\\caminho\\para\\cnd add:*)",
-      "Bash(git -C C:\\caminho\\para\\cnd commit:*)",
-      "Bash(git -C C:\\caminho\\para\\cnd status:*)",
-      "Bash(git -C C:\\caminho\\para\\cnd diff:*)",
-      "Bash(git -C C:\\caminho\\para\\cnd log:*)",
-      "Read",
-      "Write",
-      "Edit",
-      "Glob",
-      "Grep"
+      "Bash(git -C C:\\Workspace\\cnd add:*)",
+      "Bash(git -C C:\\Workspace\\cnd commit:*)",
+      "Bash(git -C C:\\Workspace\\cnd status:*)",
+      "Bash(git -C C:\\Workspace\\cnd diff:*)",
+      "Bash(git -C C:\\Workspace\\cnd log:*)",
+      "Read", "Write", "Edit", "Glob", "Grep"
     ],
-    "additionalDirectories": [
-      "C:\\caminho\\para\\cnd"
-    ]
-  },
-  "mcpServers": {
-    "cnd-pipeline": {
-      "command": "node",
-      "args": ["C:\\caminho\\para\\cnd-automation\\dist\\index.js"],
-      "env": {
-        "GIT_WORKING_DIR": "C:\\caminho\\para\\cnd",
-        "GIT_REPO_URL": "git@gitlab.questor.com.br:timeweb/cnd.git",
-        "GIT_BRANCH": "cnd-automation",
-        "GIT_USER_NAME": "mcp-cnd-pipeline",
-        "GIT_USER_EMAIL": "mcp@questores.com.br",
-        "WORK_DIR": "C:\\caminho\\para\\cnd-automation\\work",
-        "PHP_BINARY": "php",
-        "REDMINE_URL": "https://redmine.questor.com.br",
-        "REDMINE_API_KEY": "SUA_API_KEY_AQUI",
-        "REDMINE_PROJECT_ID": "1106",
-        "REDMINE_ASSIGNED_TO_ID": "1062",
-        "REDMINE_FAILURE_ASSIGNEE_ID": "875",
-        "DOCKER_CONTAINER": "",
-        "DOCKER_WORKING_DIR": "/var/www/html",
-        "GOOGLE_CHAT_WEBHOOK_URL": ""
-      }
-    }
+    "additionalDirectories": ["C:\\Workspace\\cnd"]
   }
 }
 ```
 
-> **DOCKER_CONTAINER**: se o PHP rodar dentro de um container Docker, informe o nome do container (ex: `configs-development-app-1`). Deixe vazio para usar o PHP do host.
-
-> **REDMINE_ASSIGNED_TO_ID** = `1062` (grupo "Questor Sistemas - Desenvolvimento Web") é a origem das tarefas processadas. **REDMINE_FAILURE_ASSIGNEE_ID** = `875` (grupo "Questor Sistemas - Analista de Negocio Web/Imobiliário") é o destino quando o `/auto` não consegue resolver — a tarefa é reatribuída automaticamente para análise manual.
-
-> **GOOGLE_CHAT_WEBHOOK_URL**: webhook do Google Chat para notificações de sucesso/falha por tarefa. Gerar em **Configurações do Space → Apps e integrações → Adicionar webhooks** e colar a URL completa (contém token, tratar como senha). Se vazio, as notificações são silenciosamente puladas.
-
-> **permissions**: libera as MCP tools do pipeline e os comandos Bash usados pela skill `/auto` sem prompts. Substitua `C:\\caminho\\para\\cnd` pelo caminho real onde o repo CND foi clonado (precisa bater com `GIT_WORKING_DIR` e aparecer também em `additionalDirectories` pra permitir Read/Edit fora do workspace).
+Substitua `C:\\Workspace\\cnd` pelo seu `GIT_WORKING_DIR` real (precisa bater).
 
 ### CapMonster (resolver captcha no HAR capture)
 
