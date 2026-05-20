@@ -9,6 +9,7 @@ Servidor MCP que automatiza a implementação de certidões no projeto CND. Para
 - [rebrowser-playwright](https://github.com/rebrowser/rebrowser-playwright) com Chromium instalado (fork stealth do Playwright; API idêntica)
 - [Claude Code](https://claude.ai/code) CLI instalado
 - Acesso ao Redmine da Questor e ao repositório CND
+- **Google Chrome + [AutoHotkey v2](https://www.autohotkey.com/) + [Tesseract OCR](https://github.com/UB-Mannheim/tesseract/wiki)** — usados pelo fallback `pipeline_browser_capture_ahk`, acionado como 3ª tentativa toda vez que o Playwright falha 2x (não só em casos de anti-bot). Ver [Fallback AHK](#fallback-ahk-pipeline_browser_capture_ahk).
 
 ## Instalação
 
@@ -62,6 +63,7 @@ Sem esse arquivo, o Claude Code prompta a cada uso de tool. Crie pra liberar de 
     "allow": [
       "mcp__cnd-pipeline__pipeline_discover",
       "mcp__cnd-pipeline__pipeline_browser_capture",
+      "mcp__cnd-pipeline__pipeline_browser_capture_ahk",
       "mcp__cnd-pipeline__pipeline_extract_har",
       "mcp__cnd-pipeline__pipeline_interpret_flow",
       "mcp__cnd-pipeline__pipeline_generate_code",
@@ -99,6 +101,38 @@ O `pipeline_browser_capture` carrega a extensão [CapMonster](https://capmonster
 4. Pode fechar — a chave fica salva em `browser-profile/` (gitignored) e persiste entre execuções.
 
 > A extensão é usada **apenas no HAR capture**. O código PHP em produção usa o solver próprio embutido nas classes-base da CND.
+
+### Fallback AHK (`pipeline_browser_capture_ahk`)
+
+Quando o `pipeline_browser_capture` (Playwright) falha duas vezes seguidas no mesmo portal — seja por detecção de bot (Cloudflare interativo, Flutter Web em canvas), seja por timing/seletor que Claude não consegue corrigir — o `/auto` cai pra esse fallback como 3ª tentativa, desde que todos os `nav_steps` sejam baseados em texto visível (`click_text`/`fill_field`/`select_text`/`goto`/`wait`). Sobe um Chrome real via CDP, dirige cliques/digitação reais via AutoHotkey (input OS-level, indistinguível de humano) e localiza elementos por OCR (Tesseract) em vez de seletor CSS. O tráfego é capturado pelos eventos `Network.*` do CDP e gravado num HAR compatível com `pipeline_extract_har`.
+
+**Instalação (uma vez por máquina):**
+
+```powershell
+winget install --id AutoHotkey.AutoHotkey
+winget install --id UB-Mannheim.TesseractOCR
+```
+
+O Tesseract padrão vem só com `eng`+`osd`. Baixe o pacote português:
+
+```powershell
+curl.exe -L -o resources\tessdata\por.traineddata `
+  https://github.com/tesseract-ocr/tessdata_fast/raw/main/por.traineddata
+# eng/osd também ficam no resources/tessdata/ — copie de "C:\Program Files\Tesseract-OCR\tessdata\"
+Copy-Item "C:\Program Files\Tesseract-OCR\tessdata\eng.traineddata" resources\tessdata\
+Copy-Item "C:\Program Files\Tesseract-OCR\tessdata\osd.traineddata" resources\tessdata\
+```
+
+Manter o `tessdata` versionado no repo (`resources/tessdata/`) evita escrita em `Program Files` (que exige admin) e faz a configuração viajar com o projeto.
+
+**Profile persistente compartilhado com o Playwright:** o Chrome do AHK usa o mesmo `browser-profile/` (gitignored) que o `pipeline_browser_capture`. No primeiro run o profile é virgem; do segundo em diante ele já vai com cookies/histórico/fingerprint acumulados — o que melhora o score em verificações tipo Cloudflare. Para resetar, basta apagar a pasta.
+
+**Limitações:**
+- Só suporta nav_steps baseados em texto visível: `goto`, `wait`, `click_text`, `fill_field`, `select_text`. Actions com `selector` são rejeitadas (não há DOM pra inspecionar).
+- Cada step que usa OCR é ~500ms mais lento que Playwright (screenshot + tesseract).
+- A janela do Chrome precisa ficar **em foreground durante toda a execução** — não use o PC enquanto roda.
+
+Detalhes do critério de fallback no SKILL: [.claude/skills/auto/SKILL.md](.claude/skills/auto/SKILL.md) (PASSO 6 → "Fallback: `pipeline_browser_capture_ahk`").
 
 ## Uso
 
@@ -167,6 +201,7 @@ use redmine_get_tasks to fetch open tasks, then run pipeline for task #1234
 | `redmine_get_tasks` | Força atualização da fila do Redmine |
 | `pipeline_discover` | Analisa a descrição da tarefa e extrai URL, inputs e fluxo esperado |
 | `pipeline_browser_capture` | Abre o Playwright, navega no portal e captura o HAR |
+| `pipeline_browser_capture_ahk` | **Fallback** — sobe Chrome real via CDP, dirige por AutoHotkey + OCR (Tesseract), grava HAR. Usado quando o Playwright falha 2x por detecção de bot. |
 | `pipeline_extract_har` | Filtra o HAR, mantendo apenas requisições relevantes |
 | `pipeline_interpret_flow` | Classifica cada step HTTP e detecta o tipo de fluxo |
 | `pipeline_generate_code` | Coleta contexto e exemplos para geração da classe PHP |

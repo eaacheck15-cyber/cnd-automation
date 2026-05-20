@@ -58,4 +58,25 @@ export const BLOCKS_MEMORY_PATH = path.join(
 );
 
 export const HAR_DIR = path.join(WORK_DIR, "har");
+
+// Caminhos dos binários do fallback AHK (Chrome real + AHK + Tesseract).
+// Usados pelo `pipeline_browser_capture_ahk` quando o Playwright bate em Cloudflare/Flutter canvas.
+export const CHROME_BINARY = optional(
+  "CHROME_BINARY",
+  "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe"
+);
+export const AHK_BINARY = optional(
+  "AHK_BINARY",
+  "C:\\Program Files\\AutoHotkey\\v2\\AutoHotkey64.exe"
+);
+export const TESSERACT_BINARY = optional(
+  "TESSERACT_BINARY",
+  "C:\\Program Files\\Tesseract-OCR\\tesseract.exe"
+);
+export const TESSDATA_DIR = path.resolve(
+  path.dirname(fileURLToPath(import.meta.url)),
+  "..",
+  "resources",
+  "tessdata"
+);
 export const TASK_QUEUE_PATH = path.join(WORK_DIR, "state", "task_queue.json");

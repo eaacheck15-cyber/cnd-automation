@@ -38,7 +38,11 @@ Alterações realizadas:
 Projetos e Arquivos Modificados:
 > cnd — {caminho relativo do arquivo PHP}
 > cnd — config/certificates.php
+
+Branch: cnd-automation
 ```
+
+A linha `Branch: cnd-automation` é **obrigatória** — sinaliza ao revisor de qual branch do repo `cnd` ele deve abrir o merge request. O `pipeline_commit` sempre commita em `cnd-automation` (valor de `GIT_BRANCH` no `.env`); não inventar outro nome.
 
 Sem prosa adicional, sem detalhes técnicos de fluxo/teste — esse formato curto é o que o time consome. Detalhes técnicos vão no commit message, não na nota do Redmine.
 
@@ -47,6 +51,17 @@ Sem prosa adicional, sem detalhes técnicos de fluxo/teste — esse formato curt
 Não rodar `php artisan` direto nem invocar steps manualmente. Use `mcp__cnd-pipeline__pipeline_*` (discover, browser_capture, extract_har, interpret_flow, generate_code, test, commit).
 
 Ao passar CNPJ/CPF para `pipeline_test` (parâmetro `cnpj`), sempre **só dígitos**, sem pontos, barras ou hífens. O insert em `listaespera` espera o valor cru.
+
+### Fallback AHK — `pipeline_browser_capture_ahk`
+
+Quando o `pipeline_browser_capture` (Playwright) falha 2x, a **3ª tentativa é o AHK** sempre que os `nav_steps` forem 100% baseados em texto (`goto`, `wait`, `click_text`, `fill_field`, `select_text`) — independente da causa aparente da falha. Se algum step usa `selector` ou `frame_*`, o AHK rejeita; nesse caso pular direto pro HAR-parcial.
+
+Sinais que confirmam Cloudflare/canvas (use pra ajustar a chamada, não pra decidir SE chama):
+- `diagnostics.page_title` contém `"Um momento"` / `"Just a moment"` / `"Verifying"` → Cloudflare challenge interativo
+- `dom_snippet` referencia `cdn-cgi/challenge-platform` → Cloudflare
+- `visible_elements` quase vazio + DOM trivial (`<flt-*>`, `main.dart.js`, canvas) → Flutter Web canvas-rendered
+
+Profile persistente em `browser-profile/` é compartilhado com o Playwright e acumula cookies/histórico ao longo dos runs. Detalhes completos no PASSO 6 do [.claude/skills/auto/SKILL.md](.claude/skills/auto/SKILL.md).
 
 ## Estilo das classes `Certificate*` — orquestração, não script
 

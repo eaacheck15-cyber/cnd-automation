@@ -178,6 +178,30 @@ Chame `pipeline_browser_capture` com `nav_steps` preenchido.
 
 Se vier `failed_step`, **use `diagnostics.visible_elements`** para descobrir o texto/label real e ajuste só aquele step na 2ª tentativa (não refaça o `nav_steps` inteiro). Limite total: 2 tentativas.
 
+**Se a 2ª tentativa também voltar com `failed_step`**, a 3ª tentativa é o **fallback AHK** sempre que possível:
+
+#### Fallback: `pipeline_browser_capture_ahk` (3ª tentativa)
+
+**Regra de decisão:**
+
+- **Se todos os `nav_steps` usam apenas actions de texto** (`goto`, `wait`, `click_text`, `fill_field`, `select_text`) → **chamar AHK sempre**, independente da causa aparente da 2ª falha. Mesmo quando o problema não parece detecção de bot, vale a tentativa: o input OS-level é estritamente mais real e o profile compartilhado pode ter acumulado cookies/sessão que destrancam o portal.
+- **Se algum `nav_step` usa `selector`, `fill`, `click`, `select`, `frame_fill` ou `frame_click`** → AHK rejeita (não há DOM pra inspecionar). Pula direto pra "Aproveite o HAR parcial" abaixo.
+
+**Sinais que confirmam que o AHK é a saída certa** (use pra ajustar a chamada, não pra decidir SE chama):
+
+- `diagnostics.page_title` contém `"Um momento"`, `"Just a moment"`, `"Verifying"` → Cloudflare challenge interativo
+- `dom_snippet` mostra `<script>` apontando pra `cdn-cgi/challenge-platform` → Cloudflare
+- `visible_elements` quase vazio + DOM trivial (ex.: só `<flt-*>` tags, `main.dart.js`, canvas) → Flutter Web renderizado em canvas, sem DOM acessível
+- Falha logo no primeiro `fill_field`/`click_text` com "No input/element found" mesmo após `wait` longo
+
+A tool `pipeline_browser_capture_ahk` sobe um Chrome real, dirige por OCR + AutoHotkey (input OS-level, indistinguível de humano) e grava o HAR via CDP. Mesma assinatura (`task_id`, `url`, `inputs`, `expected_flow`, `nav_steps`), porém:
+
+- Cada step que usa OCR é ~500ms mais lento que Playwright (screenshot + tesseract).
+- A janela do Chrome precisa ficar **em foreground durante toda a execução** — não use o PC enquanto roda.
+- **Passe o `diagnostics`** do Playwright no parâmetro `playwright_diagnostics` da chamada. Quando os campos `page_title`/`dom_snippet` mostrarem sinais de Cloudflare, a tool estende automaticamente a espera por challenge de 15s pra 45s antes do primeiro clique — você não precisa adicionar um `wait` manual gigante no `nav_steps`. Profile (`browser-profile/`) é compartilhado com o Playwright, então cookies `cf_clearance` capturados na tentativa anterior já viajam pro Chrome do AHK automaticamente.
+
+Se o fallback AHK também falhar (`failed_step` retornado), aí sim siga pra "Aproveite o HAR parcial" ou registre falha no PASSO 11.
+
 **Se a 2ª tentativa também voltar com `failed_step`** (HAR incompleto), não desista — o HAR parcial pode ter valor real (cookies, CSRF, headers e payloads autênticos dos passos que rodaram). Decida pelo critério abaixo:
 
 **Aproveite o HAR parcial quando:**
@@ -309,7 +333,11 @@ Alterações realizadas:
 Projetos e Arquivos Modificados:
 > cnd — {caminho relativo do arquivo PHP}
 > cnd — config/certificates.php
+
+Branch: cnd-automation
 ```
+
+A linha `Branch: cnd-automation` é **obrigatória** — sinaliza ao revisor de qual branch do repo `cnd` ele deve abrir o merge request. Não inventar outro nome de branch; o `pipeline_commit` sempre commita em `cnd-automation` (valor de `GIT_BRANCH` no `.env`).
 
 Exiba: `✅ #{task_id} — {class_name} — commitado e atualizado no Redmine.`
 

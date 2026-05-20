@@ -4,6 +4,7 @@ import { z } from "zod";
 
 import { discover } from "./tools/discover.js";
 import { browserCapture } from "./tools/browser.js";
+import { browserCaptureAhk } from "./tools/browser_ahk.js";
 import { extractHar } from "./tools/extract.js";
 import { interpretFlow } from "./tools/interpret.js";
 import { generateCode } from "./tools/generate.js";
@@ -81,6 +82,32 @@ server.tool(
   async (input) => {
     try {
       const result = await browserCapture(input);
+      return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+    } catch (err) {
+      return { content: [{ type: "text", text: `Error: ${(err as Error).message}` }], isError: true };
+    }
+  }
+);
+
+// ─── Tool: pipeline_browser_capture_ahk (fallback) ───────────────────────────
+
+server.tool(
+  "pipeline_browser_capture_ahk",
+  "FALLBACK só usado quando pipeline_browser_capture falhou 2 vezes (ex.: portal protegido por Cloudflare challenge interativo ou SPA Flutter Web renderizada em canvas, sem DOM acessível ao Playwright). Sobe um Chrome real via CDP, dispara cliques/digitação reais via AutoHotkey usando OCR (Tesseract) para localizar texto na tela, e grava o HAR a partir dos eventos Network do CDP. Mesma assinatura do pipeline_browser_capture, mas só suporta nav_steps baseados em texto visível: goto, wait, click_text, fill_field, select_text. Actions selector-based (fill/click/select/frame_*) são rejeitadas. Quando o Playwright falhou por challenge interativo, repasse o objeto `diagnostics` retornado por ele em `playwright_diagnostics` — usaremos para esperar dinamicamente o challenge cair antes do primeiro clique (sem isso, o default já espera 15s).",
+  {
+    task_id:       z.string(),
+    url:           z.string(),
+    inputs:        z.array(z.string()),
+    expected_flow: z.array(z.string()),
+    nav_steps:     z.array(NavStepSchema).optional(),
+    playwright_diagnostics: z.object({
+      page_title:  z.string().optional(),
+      dom_snippet: z.string().optional(),
+    }).optional().describe("Repasse o objeto `diagnostics` retornado por pipeline_browser_capture quando ele falhou — usamos page_title/dom_snippet pra detectar se a falha foi por Cloudflare e estender o tempo de espera do challenge de 15s pra 45s."),
+  },
+  async (input) => {
+    try {
+      const result = await browserCaptureAhk(input);
       return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
     } catch (err) {
       return { content: [{ type: "text", text: `Error: ${(err as Error).message}` }], isError: true };
