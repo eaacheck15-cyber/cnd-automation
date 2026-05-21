@@ -1,7 +1,7 @@
 import { execSync } from "child_process";
 import path from "path";
 import type { CommitResult, CertificateType } from "../types.js";
-import { GIT_WORKING_DIR, PHP_BINARY, DOCKER_CONTAINER } from "../config.js";
+import { GIT_WORKING_DIR, GIT_BRANCH, PHP_BINARY, DOCKER_CONTAINER } from "../config.js";
 
 export interface CommitInput {
   task_id: string;
@@ -22,8 +22,14 @@ export async function commitResult(input: CommitInput): Promise<CommitResult> {
   const exec = (cmd: string) =>
     execSync(cmd, { cwd: GIT_WORKING_DIR, stdio: "pipe", encoding: "utf-8" });
 
+  const currentBranch = exec("git rev-parse --abbrev-ref HEAD").trim();
+  if (currentBranch !== GIT_BRANCH) {
+    exec(`git checkout ${GIT_BRANCH}`);
+  }
+
   exec(`git add "${certPath}" "${configPath}" "${memoryPath}"`);
   exec(`git commit -m "${message}"`);
+  exec(`git push origin ${GIT_BRANCH}`);
 
   const hash = exec("git rev-parse --short HEAD").trim();
 
