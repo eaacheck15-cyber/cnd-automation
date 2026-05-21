@@ -6,8 +6,13 @@ import {
   REDMINE_PROJECT_ID,
   REDMINE_ASSIGNED_TO_ID,
   REDMINE_ASSIGNED_TO_NAME,
+  REDMINE_FAILURE_ASSIGNEE_ID,
   TASK_QUEUE_PATH,
 } from "../config.js";
+
+function hasDescription(issue: RedmineIssue): boolean {
+  return typeof issue.description === "string" && issue.description.trim().length > 0;
+}
 
 function filterByAssignee(issues: RedmineIssue[]): RedmineIssue[] {
   if (!REDMINE_ASSIGNED_TO_NAME) return issues;
@@ -170,9 +175,33 @@ export async function getNextTask(): Promise<{
     return { task: null, remaining: 0, cursor: 0, fetched_at: queue.fetched_at, auto_refreshed };
   }
 
-  const candidate = queue.tasks[queue.cursor];
-  queue.cursor += 1;
+  while (queue.cursor < queue.tasks.length) {
+    const candidate = queue.tasks[queue.cursor];
+    queue.cursor += 1;
+
+    if (!hasDescription(candidate)) {
+      if (REDMINE_FAILURE_ASSIGNEE_ID) {
+        try {
+          await updateRedmineIssue({
+            issue_id: candidate.id,
+            assigned_to_id: REDMINE_FAILURE_ASSIGNEE_ID,
+            notes:
+              "Tarefa sem descrição — reatribuída para o Analista de Negócio Web/Imobiliário " +
+              "preencher os detalhes (URL, parâmetros, fluxo esperado) antes da automação prosseguir.",
+          });
+        } catch (err) {
+          // Não interrompe a fila se a reatribuição falhar; segue procurando próxima.
+        }
+      }
+      saveQueue(queue);
+      continue;
+    }
+
+    saveQueue(queue);
+    const remaining = queue.tasks.length - queue.cursor;
+    return { task: candidate, remaining, cursor: queue.cursor, fetched_at: queue.fetched_at, auto_refreshed };
+  }
+
   saveQueue(queue);
-  const remaining = queue.tasks.length - queue.cursor;
-  return { task: candidate, remaining, cursor: queue.cursor, fetched_at: queue.fetched_at, auto_refreshed };
+  return { task: null, remaining: 0, cursor: queue.cursor, fetched_at: queue.fetched_at, auto_refreshed };
 }

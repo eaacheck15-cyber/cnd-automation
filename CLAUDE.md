@@ -98,6 +98,7 @@ Toda execução do `/auto` (sucesso ou ajuste pós-test) deve resultar em **um �
 
 - **Sempre que houver PDF disponível, baixar e salvar** (`downloadPDF` / `generatePDF`). PDF gerado fica arquivado em qualquer caso (regular ou irregular).
 - **Caminho padrão de classificação:** `processIssuance()` é onde se atribui `$this->situation`, `$this->expirationDate` e `$this->protocolNumber`, lendo o PDF/dados já capturados. Use isso como default.
+- **`protocolNumber` ausente:** quando nem o PDF nem a tarefa do Redmine indicam onde extrair o número de protocolo (alguns órgãos simplesmente não emitem), atribua `$this->protocolNumber = "S/N"`. Não inventar regex, não deixar vazio, não tentar derivar de outros campos.
 - **Exceção — `saveCertificateRegular` / `saveCertificateIrregular` dentro de um fetch:** só quando a própria resposta do site **já carrega uma mensagem que certifica a situação sem gerar PDF** (ex.: TRF4 retorna "Nenhum processo com movimentação foi localizado" no HTML antes de qualquer PDF). Nesses casos, o helper salva o conteúdo textual como "certidão" e curto-circuita. Não é o caminho padrão; é para quando o site simplesmente não entrega PDF naquele cenário.
 
 ## Como me treinar (para todos os devs)
