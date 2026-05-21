@@ -7,6 +7,11 @@ const STATUS_ICON: Record<NotifyStatus, string> = {
   ERRO: "🔴",
 };
 
+const STATUS_LABEL: Record<NotifyStatus, string> = {
+  SUCESSO: "SUCESSO",
+  ERRO: "FALHA",
+};
+
 const DEFAULT_FAILURE_ASSIGNEE = "Analista de Negócio Web/Imobiliário";
 
 function formatBR(date: Date): string {
@@ -65,7 +70,7 @@ export async function notifyGoogleChat(input: NotifyInput): Promise<{ sent: bool
     cards: [
       {
         header: {
-          title: `${icone} CND #${input.task_id} — ${input.class_name}`,
+          title: `${icone} ${STATUS_LABEL[input.status]} — CND #${input.task_id} — ${input.class_name}`,
           subtitle: formatBR(agora),
           imageStyle: "AVATAR",
         },
