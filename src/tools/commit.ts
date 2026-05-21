@@ -16,7 +16,6 @@ export async function commitResult(input: CommitInput): Promise<CommitResult> {
 
   const certPath   = getCertPath(type, state, class_name);
   const configPath = "config/certificates.php";
-  const memoryPath = path.join(".claude", "blocks", "CND_BLOCKS_MEMORY.json");
   const message    = `#${task_id} - ${task_subject}`;
 
   const exec = (cmd: string) =>
@@ -27,7 +26,7 @@ export async function commitResult(input: CommitInput): Promise<CommitResult> {
     exec(`git checkout ${GIT_BRANCH}`);
   }
 
-  exec(`git add "${certPath}" "${configPath}" "${memoryPath}"`);
+  exec(`git add "${certPath}" "${configPath}"`);
   exec(`git commit -m "${message}"`);
   exec(`git push origin ${GIT_BRANCH}`);
 
