@@ -57,9 +57,9 @@ Ao passar CNPJ/CPF para `pipeline_test` (parâmetro `cnpj`), sempre **só dígit
 Quando o `pipeline_browser_capture` (Playwright) falha 2x, a **3ª tentativa é o AHK** sempre que os `nav_steps` forem 100% baseados em texto (`goto`, `wait`, `click_text`, `fill_field`, `select_text`) — independente da causa aparente da falha. Se algum step usa `selector` ou `frame_*`, o AHK rejeita; nesse caso pular direto pro HAR-parcial.
 
 Sinais que confirmam Cloudflare/canvas (use pra ajustar a chamada, não pra decidir SE chama):
-- `diagnostics.page_title` contém `"Um momento"` / `"Just a moment"` / `"Verifying"` → Cloudflare challenge interativo
+- `diagnostics.page_title` contém `"Um momento"` / `"Just a moment"` / `"Verifying"` → Cloudflare challenge interativo (a tool auto-estende espera de 15s pra 45s)
 - `dom_snippet` referencia `cdn-cgi/challenge-platform` → Cloudflare
-- `visible_elements` quase vazio + DOM trivial (`<flt-*>`, `main.dart.js`, canvas) → Flutter Web canvas-rendered
+- `visible_elements` quase vazio + DOM trivial (`<flt-*>`, `main.dart.js`, canvas) → Flutter Web canvas-rendered — **a tool NÃO auto-estende a espera**. Coloque `wait` de pelo menos **15000ms** entre o `goto` e o primeiro `fill_field`/`click_text` (Flutter precisa pintar o canvas + carregar fontes Material/CupertinoIcons antes da OCR achar os campos). Se voltar `failed_step` no primeiro campo com 6s de espera, suba pra 15s e retente — em vez de assumir que a OCR não funciona.
 
 Profile persistente em `browser-profile/` é compartilhado com o Playwright e acumula cookies/histórico ao longo dos runs. Detalhes completos no PASSO 6 do [.claude/skills/auto/SKILL.md](.claude/skills/auto/SKILL.md).
 
@@ -67,7 +67,7 @@ Profile persistente em `browser-profile/` é compartilhado com o Playwright e ac
 
 Toda classe gerada deve seguir o padrão do restante do projeto (ex.: `CertificateTRF4ProcessosDistribuidos`):
 
-- `startIssuance()` **só orquestra** — chama métodos privados com nomes que descrevem a etapa (`initSession`, `solveCaptcha`, `requestCnd`, `getUrlPdf`, etc.). Nunca tem `$this->http->...` direto.
+- `startIssuance()` **só orquestra** — chama métodos privados com nomes que descrevem a etapa (`initSession`, `solveCaptcha`, `requestCnd`, `getUrlPdf`, etc.). Nunca tem `$this->http->...` direto e **nunca chama `issuePDF()` direto** (o `issuePDF()` é invocado pela classe-base depois do `startIssuance()`). Mesmo quando o fluxo é trivial (só 1 GET pro endpoint que já devolve o PDF), `startIssuance()` deve chamar pelo menos um método privado de inicialização — `initSession()` com um GET na home ou no endpoint de "registrar dispositivo"/cookie inicial — pra manter o padrão de orquestração.
 - `issuePDF()` também é orquestração, **mas** pode ter um `$this->http->...` direto quando for só a request final que baixa o PDF (ex.: `$response = $this->http->get($this->urlPdf); if (stringIsPdf($response->body)) $this->downloadPDF($response->body);`). Lógica de várias etapas dentro dele continua proibida.
 - Dentro de cada método privado, **use bom senso**: se duas/três requests fazem parte da mesma etapa lógica (ex.: um GET pra carregar form + POST do form na mesma sessão), pode deixá-las juntas pra não fragmentar demais. Se forem etapas distintas, vira um método por request.
 - Payloads de POST vão em `getParams*()` privados, headers em `requestHeaders*()`.
@@ -85,6 +85,14 @@ Ao inserir uma nova classe (manualmente ou após `pipeline_test`/`pipeline_commi
 - **Nunca** deixar a entrada no final do arquivo "solta" — é o sintoma típico de um append automático que precisa ser realocado.
 
 Isso vale para **toda** geração de classe, não só refactor. Se a classe gerada não estiver assim, refatore antes de testar.
+
+## Commits — um único commit por tarefa, sempre em `cnd-automation`
+
+Toda execução do `/auto` (sucesso ou ajuste pós-test) deve resultar em **um único commit** no repo `cnd`, na branch **`cnd-automation`**, com a mensagem padrão do `pipeline_commit` (`#{task_id} - {task_subject}`).
+
+- **Antes de chamar `pipeline_commit`**: confira a branch (`git -C C:/Workspace/cnd branch --show-current`). Se não estiver em `cnd-automation`, faça `git -C C:/Workspace/cnd checkout cnd-automation` (a branch precisa existir — se não existir, criar a partir de `develop`). O `pipeline_commit` commita na branch atual; ele NÃO troca de branch sozinho, mesmo o `GIT_BRANCH=cnd-automation` no `.env` apontando pra ela.
+- Não fragmentar em commits separados de "fix entry order", "refactor após feedback", etc. — se foi preciso ajustar o código gerado depois do `pipeline_commit` (mover entry em `config/certificates.php`, refatorar `startIssuance`, etc.), faça `git reset --soft HEAD~N` e recommite tudo junto.
+- Depois do commit consolidado, `git push origin cnd-automation` para subir o trabalho do dia.
 
 ## PDF e classificação regular/irregular
 
