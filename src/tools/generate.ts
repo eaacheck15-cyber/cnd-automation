@@ -31,6 +31,7 @@ export async function generateCode(input: GenerateCodeInput): Promise<Generation
     `The HTTP flow was classified as:\n${flowSummary}`,
     `Apply the validation rules from the task description inside processIssuance().`,
     `Use the example classes below as structural reference.`,
+    `Member order inside the class (top to bottom, ALWAYS): 1) URLs ($url* properties), 2) Headers (requestHeaders*() methods), 3) Payloads (getParams*() methods), 4) General functions (startIssuance, private step methods, helpers like loadHiddenFields/fixHtml, processIssuance last). Never let the URLs/header block end up below the methods.`,
     `After generating the code, call pipeline_test with the resulting php_code.`,
   ].join("\n");
 

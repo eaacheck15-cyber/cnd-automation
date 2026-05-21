@@ -74,6 +74,17 @@ Toda classe gerada deve seguir o padrão do restante do projeto (ex.: `Certifica
 - Parsing/extração de campos da resposta também em métodos próprios (`loadHiddenFields`, `getPossibleErrors`, `fixHtml`, etc.).
 - **Nomes canônicos:** quando o site não entrega PDF e a gente monta o HTML pra `generatePDF`, o método chama-se **`fixHtml`** (~140 ocorrências no projeto). Não inventar `buildHtml`/`renderHtml`/etc.
 
+### Ordem dos membros dentro da classe
+
+Mantenha **sempre** esta ordem de cima pra baixo — agrupa o que é configuração no topo e o que é comportamento embaixo, e torna o diff de review previsível:
+
+1. **URLs** — propriedades `$url*` (`$urlInit`, `$urlCaptcha`, `$urlPdf`, etc.).
+2. **Headers** — métodos `requestHeaders*()` privados que devolvem array de headers HTTP.
+3. **Payloads** — métodos `getParams*()` privados que montam o body de POSTs.
+4. **Funções gerais** — `startIssuance()`, demais métodos privados de etapa (`initSession`, `solveCaptcha`, `requestCnd`, etc.), helpers (`loadHiddenFields`, `getPossibleErrors`, `fixHtml`) e `processIssuance()` por último.
+
+Sintoma comum de classe gerada fora do padrão: o "header" de URLs aparecendo **embaixo** dos métodos — sempre que isso acontecer, reordene antes de chamar `pipeline_test`.
+
 ## Registro em `config/certificates.php`
 
 O array tem três seções comentadas (`FEDERAL`, `ESTADUAL`, `MUNICIPAL`); a seção MUNICIPAL é subdividida por UF com cabeçalhos `// AC`, `// AL`, `// AM`, etc.
