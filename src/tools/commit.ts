@@ -28,6 +28,8 @@ export async function commitResult(input: CommitInput): Promise<CommitResult> {
 
   exec(`git add "${certPath}" "${configPath}"`);
   exec(`git commit -m "${message}"`);
+  exec(`git fetch origin ${GIT_BRANCH}`);
+  exec(`git pull --rebase origin ${GIT_BRANCH}`);
   exec(`git push origin ${GIT_BRANCH}`);
 
   const hash = exec("git rev-parse --short HEAD").trim();
