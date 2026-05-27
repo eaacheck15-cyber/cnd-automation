@@ -47,6 +47,20 @@ export const REDMINE_STATUS_EM_DESENV = optional("REDMINE_STATUS_EM_DESENV", "57
 export const REDMINE_STATUS_AG_REVIEW = optional("REDMINE_STATUS_AG_REVIEW", "84");
 export const REDMINE_STATUS_AG_DESENV = optional("REDMINE_STATUS_AG_DESENV", "56");
 
+// Status IDs ignorados pelo next_task — geralmente tarefas que já estão sendo testadas
+// por alguém (ex.: 59 = Em Teste) e voltariam a aparecer na fila por engano se forem
+// reabertas. Lista separada por vírgula.
+export const REDMINE_NEXT_TASK_SKIP_STATUSES = optional("REDMINE_NEXT_TASK_SKIP_STATUSES", "59")
+  .split(",")
+  .map((s) => s.trim())
+  .filter(Boolean);
+
+// Único status que o next_task carrega na fila (default 56 = Ag. Desenv.). A fila do
+// /auto só deve conter tarefas prontas pra desenvolver; sem isso o auto-refresh trazia
+// qualquer status do responsável (review/teste/nova), e com limit=100 as de 56 podiam
+// nem entrar na página. Vazio = não filtra por status (comportamento antigo).
+export const REDMINE_NEXT_TASK_STATUS = optional("REDMINE_NEXT_TASK_STATUS", "56");
+
 export const MONGO_CONTAINER = optional("MONGO_CONTAINER", "configs-development-mongodb-1");
 export const MONGO_DB = optional("MONGO_DB", "questorservercnd");
 

@@ -7,6 +7,8 @@ import {
   REDMINE_ASSIGNED_TO_ID,
   REDMINE_ASSIGNED_TO_NAME,
   REDMINE_FAILURE_ASSIGNEE_ID,
+  REDMINE_NEXT_TASK_SKIP_STATUSES,
+  REDMINE_NEXT_TASK_STATUS,
   TASK_QUEUE_PATH,
 } from "../config.js";
 
@@ -14,10 +16,26 @@ function hasDescription(issue: RedmineIssue): boolean {
   return typeof issue.description === "string" && issue.description.trim().length > 0;
 }
 
+function isSkippedStatus(issue: RedmineIssue): boolean {
+  if (!issue.status?.id) return false;
+  return REDMINE_NEXT_TASK_SKIP_STATUSES.includes(String(issue.status.id));
+}
+
 function filterByAssignee(issues: RedmineIssue[]): RedmineIssue[] {
   if (!REDMINE_ASSIGNED_TO_NAME) return issues;
   const target = REDMINE_ASSIGNED_TO_NAME.trim().toLowerCase();
   return issues.filter((i) => i.assigned_to?.name?.trim().toLowerCase() === target);
+}
+
+// Guard do filtro de status da fila: mesmo passando status_id na query, garante que
+// só tarefas em REDMINE_NEXT_TASK_STATUS (default 56 = Ag. Desenv.) entrem/saiam da fila.
+function isQueueStatus(issue: RedmineIssue): boolean {
+  if (!REDMINE_NEXT_TASK_STATUS) return true;
+  return issue.status?.id === Number(REDMINE_NEXT_TASK_STATUS);
+}
+
+function filterByQueueStatus(issues: RedmineIssue[]): RedmineIssue[] {
+  return issues.filter(isQueueStatus);
 }
 
 export async function updateRedmineIssue(input: {
@@ -93,6 +111,7 @@ async function fetchAndSaveQueue(): Promise<TaskQueue> {
     offset: "0",
     limit: "100",
   });
+  if (REDMINE_NEXT_TASK_STATUS) params.set("status_id", REDMINE_NEXT_TASK_STATUS);
   if (REDMINE_ASSIGNED_TO_ID) params.set("assigned_to_id", REDMINE_ASSIGNED_TO_ID);
 
   const url = `${REDMINE_URL}/issues.json?${params}`;
@@ -105,7 +124,7 @@ async function fetchAndSaveQueue(): Promise<TaskQueue> {
   }
 
   const data = (await response.json()) as RedmineIssuesResponse;
-  const filtered = filterByAssignee(data.issues);
+  const filtered = filterByQueueStatus(filterByAssignee(data.issues));
   const queue: TaskQueue = {
     fetched_at: new Date().toISOString(),
     total_count: filtered.length,
@@ -178,6 +197,20 @@ export async function getNextTask(): Promise<{
   while (queue.cursor < queue.tasks.length) {
     const candidate = queue.tasks[queue.cursor];
     queue.cursor += 1;
+
+    // Pula tarefas que já estão em testes/revisão por alguém (ex.: status 59 Em Teste).
+    // Evita o pipeline reimplementar uma certidão que outro dev já entregou.
+    if (isSkippedStatus(candidate)) {
+      saveQueue(queue);
+      continue;
+    }
+
+    // Garante que só tarefas no status da fila (56 = Ag. Desenv.) sejam servidas,
+    // mesmo que a fila tenha sido gravada por outra via (ex.: redmine_get_tasks manual).
+    if (!isQueueStatus(candidate)) {
+      saveQueue(queue);
+      continue;
+    }
 
     if (!hasDescription(candidate)) {
       if (REDMINE_FAILURE_ASSIGNEE_ID) {
