@@ -54,7 +54,12 @@ Ao passar CNPJ/CPF para `pipeline_test` (parâmetro `cnpj`), sempre **só dígit
 
 ### Fallback AHK — `pipeline_browser_capture_ahk`
 
-Quando o `pipeline_browser_capture` (Playwright) falha 2x, a **3ª tentativa é o AHK** sempre que os `nav_steps` forem 100% baseados em texto (`goto`, `wait`, `click_text`, `fill_field`, `select_text`) — independente da causa aparente da falha. Se algum step usa `selector` ou `frame_*`, o AHK rejeita; nesse caso pular direto pro HAR-parcial.
+São no máximo **2 tentativas de captura**, e a 2ª depende da composição dos `nav_steps`:
+
+- **`nav_steps` 100% baseados em texto** (`goto`, `wait`, `click_text`, `fill_field`, `select_text`): 1ª tentativa Playwright (`pipeline_browser_capture`) → se falhar, a **2ª tentativa é o AHK** (`pipeline_browser_capture_ahk`) direto, **sem repetir Playwright** — independente da causa aparente da falha. O input OS-level é mais real e o profile compartilhado pode ter destrancado o portal.
+- **Algum step usa `selector` ou `frame_*`**: o AHK rejeita (não há DOM pra inspecionar). Aí a 2ª tentativa é **Playwright ajustada** (corrige só o step que falhou via `diagnostics.visible_elements`); se ainda falhar, vai pro HAR-parcial.
+
+Pega-se o HAR de qualquer das duas tentativas que tiver funcionado.
 
 Sinais que confirmam Cloudflare/canvas (use pra ajustar a chamada, não pra decidir SE chama):
 - `diagnostics.page_title` contém `"Um momento"` / `"Just a moment"` / `"Verifying"` → Cloudflare challenge interativo (a tool auto-estende espera de 15s pra 45s)
