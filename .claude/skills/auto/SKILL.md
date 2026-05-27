@@ -174,18 +174,16 @@ Monte `nav_steps` seguindo as `instrucoes` da tarefa: cada linha da seção "Ins
   - `visible_elements` — lista de botões/links/inputs/selects visíveis com `text`, `label`, `name`, `id`. Compare com o texto da instrução para descobrir o nome real do elemento.
   - `dom_snippet` — body HTML truncado em 8KB para inspeção pontual
 
-Chame `pipeline_browser_capture` com `nav_steps` preenchido.
+Chame `pipeline_browser_capture` com `nav_steps` preenchido — essa é a **1ª tentativa (Playwright)**.
 
-Se vier `failed_step`, **use `diagnostics.visible_elements`** para descobrir o texto/label real e ajuste só aquele step na 2ª tentativa (não refaça o `nav_steps` inteiro). Limite total: 2 tentativas.
+Se vier `failed_step`, a **2ª tentativa** depende da composição dos `nav_steps`:
 
-**Se a 2ª tentativa também voltar com `failed_step`**, a 3ª tentativa é o **fallback AHK** sempre que possível:
+- **Todos os steps são texto puro** (`goto`, `wait`, `click_text`, `fill_field`, `select_text`) → **2ª tentativa = AHK** (`pipeline_browser_capture_ahk`, ver abaixo). **Não repita em Playwright** — vá direto pro AHK. O input OS-level é estritamente mais real e o profile compartilhado pode ter acumulado cookies/sessão que destrancam o portal.
+- **Algum step usa `selector`, `fill`, `click`, `select`, `frame_fill` ou `frame_click`** → o AHK rejeita (não há DOM pra inspecionar). **2ª tentativa = Playwright ajustada**: use `diagnostics.visible_elements` pra achar o texto/label/selector real e ajuste **só o step que falhou** (não refaça o `nav_steps` inteiro). Se ainda assim falhar, vá pra "Quando aproveitar o HAR parcial".
 
-#### Fallback: `pipeline_browser_capture_ahk` (3ª tentativa)
+Pegue o HAR de qualquer das duas tentativas que tiver funcionado. **Limite total: 2 tentativas** (Playwright + AHK, ou Playwright + Playwright ajustada).
 
-**Regra de decisão:**
-
-- **Se todos os `nav_steps` usam apenas actions de texto** (`goto`, `wait`, `click_text`, `fill_field`, `select_text`) → **chamar AHK sempre**, independente da causa aparente da 2ª falha. Mesmo quando o problema não parece detecção de bot, vale a tentativa: o input OS-level é estritamente mais real e o profile compartilhado pode ter acumulado cookies/sessão que destrancam o portal.
-- **Se algum `nav_step` usa `selector`, `fill`, `click`, `select`, `frame_fill` ou `frame_click`** → AHK rejeita (não há DOM pra inspecionar). Pula direto pra "Aproveite o HAR parcial" abaixo.
+#### Fallback AHK: `pipeline_browser_capture_ahk`
 
 **Sinais que confirmam que o AHK é a saída certa** (use pra ajustar a chamada, não pra decidir SE chama):
 
@@ -200,9 +198,11 @@ A tool `pipeline_browser_capture_ahk` sobe um Chrome real, dirige por OCR + Auto
 - A janela do Chrome precisa ficar **em foreground durante toda a execução** — não use o PC enquanto roda.
 - **Passe o `diagnostics`** do Playwright no parâmetro `playwright_diagnostics` da chamada. Quando os campos `page_title`/`dom_snippet` mostrarem sinais de Cloudflare, a tool estende automaticamente a espera por challenge de 15s pra 45s antes do primeiro clique — você não precisa adicionar um `wait` manual gigante no `nav_steps`. Profile (`browser-profile/`) é compartilhado com o Playwright, então cookies `cf_clearance` capturados na tentativa anterior já viajam pro Chrome do AHK automaticamente.
 
-Se o fallback AHK também falhar (`failed_step` retornado), aí sim siga pra "Aproveite o HAR parcial" ou registre falha no PASSO 11.
+Se o fallback AHK também falhar (`failed_step` retornado), aí sim siga pra "Quando aproveitar o HAR parcial" ou registre falha no PASSO 11.
 
-**Se a 2ª tentativa também voltar com `failed_step`** (HAR incompleto), não desista — o HAR parcial pode ter valor real (cookies, CSRF, headers e payloads autênticos dos passos que rodaram). Decida pelo critério abaixo:
+#### Quando aproveitar o HAR parcial
+
+Se ambas as tentativas falharem (HAR incompleto), não desista — o HAR parcial pode ter valor real (cookies, CSRF, headers e payloads autênticos dos passos que rodaram). Decida pelo critério abaixo.
 
 **Aproveite o HAR parcial quando:**
 
@@ -212,7 +212,7 @@ Se o fallback AHK também falhar (`failed_step` retornado), aí sim siga pra "Ap
 
 **Pule o HAR parcial e vá direto pro `pipeline_test` quando:**
 
-- **MANUTENÇÃO** com falha logo nos primeiros steps (ex.: falhou no step 2 de 10) — o HAR cobre pouco do fluxo e a divergência provavelmente está depois. Rode `pipeline_test` com o **código PHP atual sem alterações** (pule PASSOS 8–10A → vá direto ao 10B), e analise o `artisan_output` no PASSO 11: o ponto onde o artisan quebra aponta o endpoint/parâmetro que mudou.
+- **MANUTENÇÃO** com falha logo nos primeiros steps (ex.: falhou no step 2 de 10) — o HAR cobre pouco do fluxo e a divergência provavelmente está depois. O HAR parcial só valeria a pena se cobrisse o trecho suspeito; como não cobre, **pule a extração/interpretação/correção (PASSOS 7, 8 e 9B)** e vá direto chamar `pipeline_test` com o **código PHP atual sem alterações**. Analise o `artisan_output` no PASSO 10: o ponto onde o artisan quebra aponta o endpoint/parâmetro que mudou.
 
 - **MANUTENÇÃO** com HAR quase completo (ex.: falhou no último step de 10) — o bug provavelmente está justamente no trecho que o HAR não cobriu. Mesmo caminho: `pipeline_test` com código atual + `artisan_output`.
 
@@ -250,7 +250,7 @@ Chame `pipeline_test` com `class_name`, `type`, `state`, `php_code`, `cnpj` e `n
 
 Você já tem:
 - O código PHP atual (lido no PASSO 3B)
-- A interpretação do fluxo HTTP atual do site (PASSO 9)
+- A interpretação do fluxo HTTP atual do site (PASSO 8)
 - O problema descrito na seção `expectativas`
 
 Compare o fluxo HTTP atual com o que o código PHP está replicando. Identifique o que diverge:
@@ -319,7 +319,14 @@ $p = "c:\Workspace\cnd-automation\.claude\auto_count"; $n = if (Test-Path $p) { 
 
 ### PASSO 12 — Commit e encerramento com sucesso
 
-Chame `pipeline_commit` com `task_id`, `task_subject` (subject completo da tarefa), `class_name`, `type` e `state`.
+**12.1 — Gerar o knowledge ANTES de commitar.** Execute o PASSO 13 (identificar base, atualizar `bases/{BaseClass}.md`, criar/atualizar `{federal|state}/{class_name}.md`) **agora**, antes do commit — assim o knowledge entra no mesmo commit da classe.
+
+**12.2 — Stage do knowledge:**
+```powershell
+git -C C:\Workspace\cnd add .claude/patterns/
+```
+
+**12.3 — Commit.** Chame `pipeline_commit` com `task_id`, `task_subject` (subject completo da tarefa), `class_name`, `type` e `state`. Ele faz `git add` do PHP + `config/certificates.php` e depois `git commit` de **tudo que está staged** — então os arquivos de knowledge pré-staged no 12.2 entram no **mesmo commit** `#{task_id} - {task_subject}`. **Um único commit por tarefa**, com classe + config + knowledge juntos.
 
 Chame `redmine_update_task`:
 - `issue_id`: id da tarefa
@@ -412,10 +419,6 @@ Conteúdo do arquivo:
 - {AAAA-MM-DD} | Tarefa #{task_id}
 ```
 
-#### 13.4 — Commit dos knowledge files
+#### 13.4 — Os knowledge files entram no commit da classe
 
-Se algum arquivo de knowledge foi criado ou modificado, commite apenas esses arquivos:
-```powershell
-git -C C:\Workspace\cnd add .claude/patterns/
-git -C C:\Workspace\cnd commit -m "docs: atualiza knowledge base — {class_name} #{task_id}"
-```
+**Não** crie um commit `docs:` separado. Os arquivos de `.claude/patterns/` são gerados **antes** do `pipeline_commit` e dão `git add` (ver PASSO 12.1–12.2), entrando no **mesmo commit** `#{task_id} - {task_subject}`. Como o `pipeline_commit` faz `git commit` de tudo que está staged, basta tê-los staged antes de chamá-lo — resultando em **um único commit por tarefa** com classe + config + knowledge.
