@@ -11,3 +11,6 @@ STOP
 logs/
 .claude/scheduled_tasks.lock
 .claude/auto_count
+.claude/docs_sync_commit
+docs/.obsidian/
+docs/00 - Status do Projeto.md
