@@ -30,6 +30,7 @@ export async function generateCode(input: GenerateCodeInput): Promise<Generation
     `Extend "${base_class}" (from App\\Certificates\\Bases\\).`,
     `The HTTP flow was classified as:\n${flowSummary}`,
     `Apply the validation rules from the task description inside processIssuance().`,
+    `If the task description contains a "Campos Adicionais Para a Certidão" section, declare a protected $additionalFields property near the top of the class (after the class opening), with one entry per listed field. Choose the closest AdditionalEnum constant (InscricaoMunicipal, InscricaoEstadual, Cep, Email, etc.) — when in doubt, follow the pattern in the provided example classes. Set 'optional' => false by default; use true only when the Redmine marks the field as "(Facultativo)" or "(Opcional)". This declaration lets the cadastro UI prompt the user for the field and the base class validate it automatically (returning SUSPENSO with IsErrorClient=1 when missing). Without it, the field never gets filled and the class throws a technical error on every retry.`,
     `Use the example classes below as structural reference.`,
     `Member order inside the class (top to bottom, ALWAYS): 1) URLs ($url* properties), 2) Headers (requestHeaders*() methods), 3) Payloads (getParams*() methods), 4) General functions (startIssuance, private step methods, helpers like loadHiddenFields/fixHtml, processIssuance last). Never let the URLs/header block end up below the methods.`,
     `After generating the code, call pipeline_test with the resulting php_code.`,
