@@ -13,12 +13,12 @@ Você está operando em modo autônomo. Execute cada passo na ordem abaixo, sem 
 
 - **`MAX_TAREFAS = 5`** — limite de tarefas processadas por execução agendada. Para alterar, edite só este valor.
 - Contador persistido em `c:\Workspace\cnd-automation\.claude\auto_count` (texto puro, um inteiro).
-- O contador **incrementa apenas em sucesso (PASSO 12)** ou **falha registrada no Redmine (PASSO 11)**. Encerramentos por pausa/fila vazia/erro de ambiente não contam.
+- O contador **incrementa apenas em sucesso (PASSO 13)** ou **falha registrada no Redmine (PASSO 11)**. Encerramentos por pausa/fila vazia/erro de ambiente não contam.
 - Para resetar o ciclo: `Remove-Item c:\Workspace\cnd-automation\.claude\auto_count`.
 
 ---
 
-### Pré-requisito de ambiente (não pular)
+### PASSO 0 — Pré-requisito de ambiente (não pular)
 
 O projeto `C:\Workspace\cnd` é Laravel 6 e **só roda em PHP 7.4**. PHP 8+ no host faz o artisan crashar no boot (incompatibilidade `ArrayAccess`/`ReflectionParameter`). Por isso o `pipeline_test` **DEVE** executar dentro do container Docker `configs-development-app-1` (que tem PHP 7.3.33 e o diretório `C:\Workspace\cnd\app` montado em `/var/www/html/app`).
 
@@ -108,6 +108,8 @@ Leia o arquivo com a ferramenta Read. Esse código será a base para as correç�
 
 Antes de iniciar qualquer análise, verifique se existe conhecimento acumulado sobre esta certidão ou sua base.
 
+> O formato desses arquivos é definido no **PASSO 12 (Atualizar knowledge base)**, que é quem os grava ao final da tarefa — leia aqui no mesmo padrão que será gravado lá.
+
 #### 4.1 — Verificar arquivo específico da certidão
 
 ```powershell
@@ -143,6 +145,8 @@ Salve: `url`, `inputs`, `expected_flow`, `complexity`.
 ### PASSO 6 — Captura do browser
 
 O objetivo é capturar o tráfego HTTP do portal para que o código PHP possa replicar as requisições. O browser é apenas o meio para navegar e disparar esse tráfego.
+
+**Vale para os dois tipos de operação.** Em **MANUTENÇÃO**, a captura é obrigatória e vem **antes** de qualquer `pipeline_test` — mesmo já existindo código PHP. O HAR fresco é o *ground truth* pra responder a pergunta central da manutenção: **o site mudou ou não?** Você compara request-a-request o que a classe atual manda vs. o que o portal espera hoje (PASSO 9B). Não existe atalho "a classe existe → pula pro teste": sem o HAR fresco você estaria adivinhando pelo stack trace do artisan em vez de diagnosticar pelo tráfego real. O `pipeline_test` valida a correção depois do diff, não substitui o diff.
 
 Monte `nav_steps` seguindo as `instrucoes` da tarefa: cada linha da seção "Instrução Emissão No site" vira **1 step**, na mesma ordem. O número de steps acompanha o número de linhas — pode ser 2 ou 12, sem limite.
 
@@ -185,6 +189,8 @@ Pegue o HAR de qualquer das duas tentativas que tiver funcionado. **Limite total
 
 #### Fallback AHK: `pipeline_browser_capture_ahk`
 
+> Regra canônica em CLAUDE.md › "Fallback AHK — `pipeline_browser_capture_ahk`" — manter os dois em sincronia ao alterar.
+
 **Sinais que confirmam que o AHK é a saída certa** (use pra ajustar a chamada, não pra decidir SE chama):
 
 - `diagnostics.page_title` contém `"Um momento"`, `"Just a moment"`, `"Verifying"` → Cloudflare challenge interativo
@@ -202,19 +208,11 @@ Se o fallback AHK também falhar (`failed_step` retornado), aí sim siga pra "Qu
 
 #### Quando aproveitar o HAR parcial
 
-Se ambas as tentativas falharem (HAR incompleto), não desista — o HAR parcial pode ter valor real (cookies, CSRF, headers e payloads autênticos dos passos que rodaram). Decida pelo critério abaixo.
-
-**Aproveite o HAR parcial quando:**
+Se ambas as tentativas falharem (HAR incompleto), não desista — o HAR parcial pode ter valor real (cookies, CSRF, headers e payloads autênticos dos passos que rodaram). Em **nenhum** caso a manutenção pula a extração/interpretação/diff: sempre passe pelo HAR (completo ou parcial) antes do `pipeline_test`.
 
 - **NOVA IMPLEMENTAÇÃO** — sempre que houver pelo menos 1 passo capturado. Use os requests capturados como verdade absoluta pros primeiros N passos (URL, headers, payload, hidden fields), e só caia em template/classe-irmã pra montar o restante do fluxo. Chame `pipeline_extract_har` + `pipeline_interpret_flow` no HAR parcial e siga o PASSO 9A normalmente — a base_class/template preenche o tail, mas o início é real. O `pdf_path` no output é um sinal de **confiança** sobre o quão completo está o HAR (com PDF = HAR provavelmente cobriu tudo; sem PDF = tail vai depender mais do template), mas não decide nada sozinho — a falha real só é constatada no `pipeline_test` (PASSO 10).
 
-- **MANUTENÇÃO**, *se* o `failed_step` estiver no meio/fim da lista (ex.: falhou no step 7 de 10 → 6 passos capturados). Aí compare request-a-request o que a classe PHP atual está mandando vs. o HAR capturado: se achar divergência nos passos cobertos (endpoint renomeado, parâmetro novo, header faltando), corrija direto no código existente sem precisar do `pipeline_test`.
-
-**Pule o HAR parcial e vá direto pro `pipeline_test` quando:**
-
-- **MANUTENÇÃO** com falha logo nos primeiros steps (ex.: falhou no step 2 de 10) — o HAR cobre pouco do fluxo e a divergência provavelmente está depois. O HAR parcial só valeria a pena se cobrisse o trecho suspeito; como não cobre, **pule a extração/interpretação/correção (PASSOS 7, 8 e 9B)** e vá direto chamar `pipeline_test` com o **código PHP atual sem alterações**. Analise o `artisan_output` no PASSO 10: o ponto onde o artisan quebra aponta o endpoint/parâmetro que mudou.
-
-- **MANUTENÇÃO** com HAR quase completo (ex.: falhou no último step de 10) — o bug provavelmente está justamente no trecho que o HAR não cobriu. Mesmo caminho: `pipeline_test` com código atual + `artisan_output`.
+- **MANUTENÇÃO** — **sempre** extraia e interprete o HAR que tiver (PASSOS 7 e 8) e faça o diff do PASSO 9B contra o código existente, mesmo com HAR parcial. Onde o HAR cobre, o diff é a verdade: se achar divergência nos passos cobertos (endpoint renomeado, parâmetro novo, header faltando), corrija direto no código. Onde o HAR não cobre (steps após o `failed_step`), o diff fica cego naquele trecho — mas isso **não** é motivo pra pular o teste nem pra pular o diff: aplique as correções que o trecho coberto revelou e deixe o `pipeline_test` (PASSO 10) validar o resto, lendo o `artisan_output` pra localizar a divergência no trecho não coberto. O HAR parcial reduz o escopo do que o teste precisa descobrir; ele nunca substitui a captura nem o diff.
 
 Em qualquer caso, se o `pipeline_test` falhar 3x sem dar pra corrigir, vá pro PASSO 11 (falha) usando `failure_reason` + `diagnostics.current_url`/`page_title` pra compor a mensagem.
 
@@ -250,10 +248,10 @@ Chame `pipeline_test` com `class_name`, `type`, `state`, `php_code`, `cnpj` e `n
 
 Você já tem:
 - O código PHP atual (lido no PASSO 3B)
-- A interpretação do fluxo HTTP atual do site (PASSO 8)
+- A interpretação do fluxo HTTP **fresco** do site, vinda da captura do PASSO 6 (extraída/interpretada nos PASSOS 7 e 8) — sempre presente, porque manutenção sempre captura primeiro
 - O problema descrito na seção `expectativas`
 
-Compare o fluxo HTTP atual com o que o código PHP está replicando. Identifique o que diverge:
+O diff entre o HAR fresco e o código existente é o **ponto de partida obrigatório** do diagnóstico — não comece adivinhando pelo `artisan_output`. Compare o fluxo HTTP atual com o que o código PHP está replicando e identifique o que diverge:
 - Endpoints diferentes ou renomeados?
 - Parâmetros novos, removidos ou com valores diferentes?
 - Headers ou cookies necessários que o código não está enviando?
@@ -273,7 +271,7 @@ Se o teste falhar:
 - Repita até **3 tentativas** no total.
 - Se todas falharem → vá para PASSO 11 (falha).
 
-Se passar → vá para PASSO 12 (sucesso).
+Se passar → vá para PASSO 12 (sucesso — knowledge + commit).
 
 ---
 
@@ -317,65 +315,18 @@ $p = "c:\Workspace\cnd-automation\.claude\auto_count"; $n = if (Test-Path $p) { 
 
 ---
 
-### PASSO 12 — Commit e encerramento com sucesso
+### PASSO 12 — Atualizar knowledge base
 
-**12.1 — Gerar o knowledge ANTES de commitar.** Execute o PASSO 13 (identificar base, atualizar `bases/{BaseClass}.md`, criar/atualizar `{federal|state}/{class_name}.md`) **agora**, antes do commit — assim o knowledge entra no mesmo commit da classe.
+Objetivo: registrar o que funcionou para evitar redescobrir em tarefas futuras. Gere o knowledge **agora**, antes do commit — assim ele entra no mesmo commit da classe (PASSO 13).
 
-**12.2 — Stage do knowledge:**
-```powershell
-git -C C:\Workspace\cnd add .claude/patterns/
-```
-
-**12.3 — Commit.** Chame `pipeline_commit` com `task_id`, `task_subject` (subject completo da tarefa), `class_name`, `type` e `state`. Ele faz `git add` do PHP + `config/certificates.php` e depois `git commit` de **tudo que está staged** — então os arquivos de knowledge pré-staged no 12.2 entram no **mesmo commit** `#{task_id} - {task_subject}`. **Um único commit por tarefa**, com classe + config + knowledge juntos.
-
-Chame `redmine_update_task`:
-- `issue_id`: id da tarefa
-- `status_id`: `"84"` (Ag. Review)
-- `notes`:
-```
-Alterações realizadas:
-> {implementação: "Implementação da classe {ClassName} para emissão automática de certidão."
-   manutenção: "Correção da classe {ClassName} — {descrição curta do que foi corrigido}."}
-
-Projetos e Arquivos Modificados:
-> cnd — {caminho relativo do arquivo PHP}
-> cnd — config/certificates.php
-
-Branch: cnd-automation
-```
-
-A linha `Branch: cnd-automation` é **obrigatória** — sinaliza ao revisor de qual branch do repo `cnd` ele deve abrir o merge request. Não inventar outro nome de branch; o `pipeline_commit` sempre commita em `cnd-automation` (valor de `GIT_BRANCH` no `.env`).
-
-Exiba: `✅ #{task_id} — {class_name} — commitado e atualizado no Redmine.`
-
-Notifique o Google Chat chamando `notify_google_chat`:
-- `task_id`: id numérico da tarefa
-- `class_name`: nome da classe (ex.: `CertificateCajati`)
-- `status`: `"SUCESSO"`
-- `tipo`: `"NOVA IMPLEMENTAÇÃO"` ou `"MANUTENÇÃO"`
-- `esfera`: `"Federal"`, `"Estadual <UF>"` ou `"Municipal <UF>"` (ex.: `"Municipal SP"`)
-- `inicio`: timestamp anotado no PASSO 2
-- `duracao_segundos`: `(agora - inicio)` em segundos
-
-Incremente o contador:
-```powershell
-$p = "c:\Workspace\cnd-automation\.claude\auto_count"; $n = if (Test-Path $p) { [int](Get-Content $p) } else { 0 }; ($n + 1) | Out-File $p -Encoding utf8
-```
-
----
-
-### PASSO 13 — Atualizar knowledge base
-
-Objetivo: registrar o que funcionou para evitar redescobrir em tarefas futuras.
-
-#### 13.1 — Identificar classe base
+#### 12.1 — Identificar classe base
 
 Leia o arquivo PHP da classe para encontrar qual base ela estende:
 ```php
 class CertificateX extends CertificateServlet  // → CertificateServlet
 ```
 
-#### 13.2 — Atualizar "Última execução bem-sucedida" na base
+#### 12.2 — Atualizar "Última execução bem-sucedida" na base
 
 Localize o arquivo correspondente em `C:\Workspace\cnd\.claude\patterns\bases\{BaseClass}.md`.
 
@@ -387,7 +338,7 @@ Se existir, atualize a linha `Última execução bem-sucedida`:
 
 Se o arquivo da base não existir, crie-o em `C:\Workspace\cnd\.claude\patterns\bases\{BaseClass}.md` com o padrão observado nesta execução.
 
-#### 13.3 — Criar ou atualizar arquivo da certidão
+#### 12.3 — Criar ou atualizar arquivo da certidão
 
 Verifique se existe `C:\Workspace\cnd\.claude\patterns\{federal|state}\{class_name}.md`.
 
@@ -419,6 +370,53 @@ Conteúdo do arquivo:
 - {AAAA-MM-DD} | Tarefa #{task_id}
 ```
 
-#### 13.4 — Os knowledge files entram no commit da classe
+> Esses arquivos serão staged e commitados no **PASSO 13** — não crie um commit `docs:` separado. Como o `pipeline_commit` faz `git commit` de tudo que está staged, basta tê-los staged antes de chamá-lo, resultando em **um único commit por tarefa** com classe + config + knowledge.
 
-**Não** crie um commit `docs:` separado. Os arquivos de `.claude/patterns/` são gerados **antes** do `pipeline_commit` e dão `git add` (ver PASSO 12.1–12.2), entrando no **mesmo commit** `#{task_id} - {task_subject}`. Como o `pipeline_commit` faz `git commit` de tudo que está staged, basta tê-los staged antes de chamá-lo — resultando em **um único commit por tarefa** com classe + config + knowledge.
+---
+
+### PASSO 13 — Commit e encerramento com sucesso
+
+O knowledge já foi gerado no PASSO 12 e está em `.claude/patterns/`. Stage e commite junto com a classe — **um único commit por tarefa**.
+
+**13.1 — Stage do knowledge:**
+```powershell
+git -C C:\Workspace\cnd add .claude/patterns/
+```
+
+**13.2 — Commit.** Chame `pipeline_commit` com `task_id`, `task_subject` (subject completo da tarefa), `class_name`, `type` e `state`. Ele faz `git add` do PHP + `config/certificates.php` e depois `git commit` de **tudo que está staged** — então os arquivos de knowledge pré-staged no 13.1 entram no **mesmo commit** `#{task_id} - {task_subject}`. **Um único commit por tarefa**, com classe + config + knowledge juntos.
+
+Chame `redmine_update_task`:
+- `issue_id`: id da tarefa
+- `status_id`: `"84"` (Ag. Review)
+- `notes`:
+```
+Alterações realizadas:
+> {implementação: "Implementação da classe {ClassName} para emissão automática de certidão."
+   manutenção: "Correção da classe {ClassName} — {descrição curta do que foi corrigido}."}
+
+Projetos e Arquivos Modificados:
+> cnd — {caminho relativo do arquivo PHP}
+> cnd — config/certificates.php
+
+Branch: cnd-automation
+```
+
+> Regra canônica do template em CLAUDE.md › "Notas no Redmine — formato padrão" — manter os dois em sincronia ao alterar.
+
+A linha `Branch: cnd-automation` é **obrigatória** — sinaliza ao revisor de qual branch do repo `cnd` ele deve abrir o merge request. Não inventar outro nome de branch; o `pipeline_commit` sempre commita em `cnd-automation` (valor de `GIT_BRANCH` no `.env`).
+
+Exiba: `✅ #{task_id} — {class_name} — commitado e atualizado no Redmine.`
+
+Notifique o Google Chat chamando `notify_google_chat`:
+- `task_id`: id numérico da tarefa
+- `class_name`: nome da classe (ex.: `CertificateCajati`)
+- `status`: `"SUCESSO"`
+- `tipo`: `"NOVA IMPLEMENTAÇÃO"` ou `"MANUTENÇÃO"`
+- `esfera`: `"Federal"`, `"Estadual <UF>"` ou `"Municipal <UF>"` (ex.: `"Municipal SP"`)
+- `inicio`: timestamp anotado no PASSO 2
+- `duracao_segundos`: `(agora - inicio)` em segundos
+
+Incremente o contador:
+```powershell
+$p = "c:\Workspace\cnd-automation\.claude\auto_count"; $n = if (Test-Path $p) { [int](Get-Content $p) } else { 0 }; ($n + 1) | Out-File $p -Encoding utf8
+```
