@@ -51,7 +51,7 @@ Edite preenchendo:
 
 > **DOCKER_CONTAINER é obrigatório.** O CND é Laravel 6 / PHP 7.4 e o host normalmente tem PHP 8+. Sem o container, `pipeline_test` crasha no boot do Artisan. Default no `.env.example`: `configs-development-app-1`.
 
-> `REDMINE_ASSIGNED_TO_ID=1062` (grupo "Desenvolvimento Web") = origem das tarefas. `REDMINE_FAILURE_ASSIGNEE_ID=875` (grupo "Analista de Negocio Web/Imobiliario") = destino quando o `/auto` falha — a tarefa é reatribuída automaticamente.
+> `REDMINE_ASSIGNED_TO_ID=1062` (grupo "Questor Sistemas - Desenvolvimento Web") = origem das tarefas. `REDMINE_FAILURE_ASSIGNEE_ID=875` (grupo "Questor Sistemas - Analista de Negocio Web/Imobiliario") = destino quando o `/auto` falha — a tarefa é reatribuída automaticamente.
 
 ### 2. `.claude/settings.json` (recomendado)
 
@@ -170,6 +170,33 @@ Remove-Item .claude\auto_count
 **Observações:**
 - A task roda como usuário interativo. Se a máquina estiver desligada ou o usuário deslogado às 7h, ela dispara assim que possível (graças a `-StartWhenAvailable`).
 - Confirme que o seu CLI do Claude Code aceita os flags usados em `auto-daily.ps1` (`-p "/auto" --permission-mode acceptEdits`). Ajuste se a sua versão usar nomes diferentes.
+
+### Atualização de documentação (agendada)
+
+A skill `/update-docs` mantém a documentação no vault do Obsidian fiel ao repo: levanta as alterações líquidas desde a última sincronização e reconcilia só as notas afetadas. É disparada diariamente às **18:00** (fim do expediente) pelo Task Scheduler do Windows.
+
+**Instalar o agendamento (rodar UMA vez por máquina):**
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\install-docs-task.ps1
+```
+
+Isso cria a tarefa **"CND Docs Daily"** no Task Scheduler do seu usuário (não precisa Administrador). A tarefa chama [scripts/docs-daily.ps1](scripts/docs-daily.ps1), que executa `claude -p "/update-docs"` na pasta do projeto e loga em `logs/docs-daily-YYYY-MM-DD.log`.
+
+**Conferir / desinstalar:**
+
+```powershell
+# ver status e proximo disparo
+Get-ScheduledTask -TaskName "CND Docs Daily" | Get-ScheduledTaskInfo
+
+# disparar manualmente para testar
+Start-ScheduledTask -TaskName "CND Docs Daily"
+
+# remover
+Unregister-ScheduledTask -TaskName "CND Docs Daily" -Confirm:$false
+```
+
+> O runner usa `--permission-mode bypassPermissions` para não travar esperando aprovação num run desatendido — a skill só lê o git e escreve em `docs/` (dentro do repo), então não precisa de `--add-dir`.
 
 ### Pausar o pipeline
 
