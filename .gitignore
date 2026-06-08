@@ -2,5 +2,15 @@ node_modules/
 dist/
 .env
 work/
+browser-profile/
 *.har
 *.log
+.claude/settings.json
+.claude/settings.local.json
+STOP
+logs/
+.claude/scheduled_tasks.lock
+.claude/auto_count
+.claude/docs_sync_commit
+docs/.obsidian/
+docs/00 - Status do Projeto.md

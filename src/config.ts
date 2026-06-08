@@ -1,7 +1,10 @@
 import { config } from "dotenv";
 import path from "path";
+import { fileURLToPath } from "url";
 
-config();
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+config({ path: path.join(__dirname, "..", ".env"), override: true });
 
 function required(name: string): string {
   const value = process.env[name];
@@ -21,6 +24,46 @@ export const GIT_USER_EMAIL = optional("GIT_USER_EMAIL", "mcp@questores.com.br")
 export const WORK_DIR = required("WORK_DIR");
 export const PHP_BINARY = optional("PHP_BINARY", "php");
 
+export const BROWSER_HEADLESS = optional("BROWSER_HEADLESS", "false") === "true";
+
+// Docker: when set, artisan commands run inside the container instead of host PHP
+export const DOCKER_CONTAINER = optional("DOCKER_CONTAINER", "");
+export const DOCKER_WORKING_DIR = optional("DOCKER_WORKING_DIR", "/var/www/html");
+
+export const REDMINE_URL = optional("REDMINE_URL", "https://redmine.questor.com.br");
+export const REDMINE_API_KEY = required("REDMINE_API_KEY");
+export const REDMINE_PROJECT_ID = optional("REDMINE_PROJECT_ID", "1106");
+export const REDMINE_ASSIGNED_TO_NAME = optional(
+  "REDMINE_ASSIGNED_TO_NAME",
+  "Questor Sistemas - Desenvolvimento Web"
+);
+export const REDMINE_ASSIGNED_TO_ID = optional("REDMINE_ASSIGNED_TO_ID", "");
+// Grupo destino quando o /auto falha (Analista de Negocio Web/Imobiliario).
+export const REDMINE_FAILURE_ASSIGNEE_ID = optional("REDMINE_FAILURE_ASSIGNEE_ID", "");
+
+// Webhook do Google Chat para notificacoes do /auto (sucesso/falha).
+export const GOOGLE_CHAT_WEBHOOK_URL = optional("GOOGLE_CHAT_WEBHOOK_URL", "");
+export const REDMINE_STATUS_EM_DESENV = optional("REDMINE_STATUS_EM_DESENV", "57");
+export const REDMINE_STATUS_AG_REVIEW = optional("REDMINE_STATUS_AG_REVIEW", "84");
+export const REDMINE_STATUS_AG_DESENV = optional("REDMINE_STATUS_AG_DESENV", "56");
+
+// Status IDs ignorados pelo next_task — geralmente tarefas que já estão sendo testadas
+// por alguém (ex.: 59 = Em Teste) e voltariam a aparecer na fila por engano se forem
+// reabertas. Lista separada por vírgula.
+export const REDMINE_NEXT_TASK_SKIP_STATUSES = optional("REDMINE_NEXT_TASK_SKIP_STATUSES", "59")
+  .split(",")
+  .map((s) => s.trim())
+  .filter(Boolean);
+
+// Único status que o next_task carrega na fila (default 56 = Ag. Desenv.). A fila do
+// /auto só deve conter tarefas prontas pra desenvolver; sem isso o auto-refresh trazia
+// qualquer status do responsável (review/teste/nova), e com limit=100 as de 56 podiam
+// nem entrar na página. Vazio = não filtra por status (comportamento antigo).
+export const REDMINE_NEXT_TASK_STATUS = optional("REDMINE_NEXT_TASK_STATUS", "56");
+
+export const MONGO_CONTAINER = optional("MONGO_CONTAINER", "configs-development-mongodb-1");
+export const MONGO_DB = optional("MONGO_DB", "questorservercnd");
+
 export const BLOCKS_MEMORY_PATH = path.join(
   GIT_WORKING_DIR,
   ".claude",
@@ -28,5 +71,26 @@ export const BLOCKS_MEMORY_PATH = path.join(
   "CND_BLOCKS_MEMORY.json"
 );
 
-export const STATE_DIR = path.join(WORK_DIR, "state");
 export const HAR_DIR = path.join(WORK_DIR, "har");
+
+// Caminhos dos binários do fallback AHK (Chrome real + AHK + Tesseract).
+// Usados pelo `pipeline_browser_capture_ahk` quando o Playwright bate em Cloudflare/Flutter canvas.
+export const CHROME_BINARY = optional(
+  "CHROME_BINARY",
+  "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe"
+);
+export const AHK_BINARY = optional(
+  "AHK_BINARY",
+  "C:\\Program Files\\AutoHotkey\\v2\\AutoHotkey64.exe"
+);
+export const TESSERACT_BINARY = optional(
+  "TESSERACT_BINARY",
+  "C:\\Program Files\\Tesseract-OCR\\tesseract.exe"
+);
+export const TESSDATA_DIR = path.resolve(
+  path.dirname(fileURLToPath(import.meta.url)),
+  "..",
+  "resources",
+  "tessdata"
+);
+export const TASK_QUEUE_PATH = path.join(WORK_DIR, "state", "task_queue.json");

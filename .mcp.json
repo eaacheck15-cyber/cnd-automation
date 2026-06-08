@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "cnd-pipeline": {
+      "command": "node",
+      "args": ["./dist/index.js"]
+    }
+  }
+}
