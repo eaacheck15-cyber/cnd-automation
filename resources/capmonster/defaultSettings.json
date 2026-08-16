@@ -1,6 +1,6 @@
 {
     "isEnabled": true,
-    "clientKey": "f29dc38ad137eadff8489dbf2e4d4ab6",
+    "clientKey": "YOUR_CAPMONSTER_KEY_HERE",
     "captchaList": [
         "ReCaptcha2",
         "ReCaptcha3",
